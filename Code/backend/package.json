@@ -1,0 +1,27 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Node.js/Express API server for the Clothing Donation App (per `Design/HLD.md` §3, `Design/LLD.md`).",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "migrate:make": "knex migrate:make",
+    "migrate:list": "knex migrate:list",
+    "migrate:up": "knex migrate:latest",
+    "migrate:down": "knex migrate:rollback",
+    "test:cloudinary-upload": "node scripts/upload-test-image.js",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cloudinary": "^2.10.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "knex": "^3.3.0",
+    "pg": "^8.23.0"
+  }
+}
