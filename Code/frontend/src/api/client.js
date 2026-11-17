@@ -1,4 +1,28 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
+// Defaults to whatever host the page itself was loaded from (same hostname,
+// backend's port) instead of a hardcoded 'localhost' — so this keeps working
+// unchanged whether the page is opened as localhost, a LAN IP (sharing the
+// app with others on the same network), or eventually a real domain, with
+// no per-environment config needed. VITE_API_BASE_URL still overrides this
+// explicitly when the backend genuinely lives somewhere else. `window` isn't
+// defined in vitest's Node test environment, so fall back to 'localhost' there.
+//
+// Protocol also matches the page's own (http/https) rather than being
+// hardcoded to http — when the frontend is served over https (self-signed
+// LAN dev cert, see Code/certs/), an http:// fetch from an https:// page is
+// blocked outright as mixed content, so the backend must be reached over
+// https too whenever the page itself is.
+const defaultHostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+const defaultProtocol = typeof window !== 'undefined' ? window.location.protocol : 'http:'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || `${defaultProtocol}//${defaultHostname}:4000`
+
+// Photo URLs from the backend are either absolute (Cloudinary, Task 13B) or a
+// relative /uploads/... path (local storage driver, Task 13A) — resolve the
+// latter against the API origin so <img> tags work regardless of which
+// storage driver is active server-side.
+export function resolveAssetUrl(url) {
+  if (!url) return url
+  return /^https?:\/\//.test(url) ? url : `${BASE_URL}${url}`
+}
 
 let authToken = null
 

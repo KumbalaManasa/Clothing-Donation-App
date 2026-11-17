@@ -161,9 +161,26 @@ Cross-cutting; validates every phase against its cited spec/LLD sections.
 
 Exit criteria: CI green across unit, integration, and E2E suites; no role-gated endpoint reachable by the wrong actor in manual spot-check.
 
-## Phase 13 — Deployment
+## Phase 13A — Local Development / Local PC Version
+
+Goal: run and test the complete app on a single local PC before any cloud service is provisioned. No new product behavior — this phase adds a configurable seam so image storage (and, in the future, auth) can point at a local or cloud backend by environment variable alone, keeps everything else from Phases 0–12 untouched, and defers all cloud provisioning to Phase 13B.
+
+- [ ] Add an image-storage seam (`IMAGE_STORAGE_DRIVER=local|cloudinary`, default `local`) so `POST /listings/upload-photo` and `POST /claims/:id/distribute` stop importing the Cloudinary helper directly.
+- [ ] Local driver: validate and save the existing base64 data-URI upload payload to `backend/uploads/`, serve it read-only via `express.static` at `/uploads`.
+- [ ] Confirm auth needs no change: the self-issued JWT from Phase 2 (task 2.9) is already the live `requireAuth` path; Firebase Auth stays an unused, uninitialized dependency until Phase 13B.
+- [ ] Confirm Postgres stays local (no RDS/cloud DB) — no config change needed, `DATABASE_URL` already points at the local instance.
+- [ ] Render uploaded photos in the frontend (donor's "My Listings") so the local storage round-trip is actually visible, not just returning a URL.
+- [ ] Document exact local run commands (Postgres, backend, frontend) and confirm existing role/verification checks are unaffected.
+
+Exit criteria: a donor can sign up, create a listing with a real photo, and see it displayed; a verified NGO can claim → pick up → distribute — entirely on localhost, with no Cloudinary or Firebase credentials configured.
+
+## Phase 13B — Production / Cloud Version
+
+Not implemented as part of Phase 13A — requires real external accounts. Switching from 13A to this should only mean setting `IMAGE_STORAGE_DRIVER=cloudinary` plus credentials, not rewriting the upload routes, because of the seam Phase 13A introduces.
 
 - [ ] Provision production Postgres, Cloudinary, Firebase Auth project.
+- [ ] Set `IMAGE_STORAGE_DRIVER=cloudinary` in production config.
+- [ ] Evaluate replacing the local JWT (task 2.9) with real Firebase ID token verification — `createAuthMiddleware` already takes the verifying function as a parameter for this swap.
 - [ ] Deploy backend (API + background job) and frontend to chosen hosting.
 - [ ] Configure the real government verification source integration behind the `verifyNgo` seam (blocks full production readiness until spec.md §10's open item is resolved — staging can continue running the stub).
 - [ ] Smoke test the five-step core flow (spec.md §4 "Core User Flow") in production.

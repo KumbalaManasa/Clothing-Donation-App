@@ -149,6 +149,8 @@ Carried from `idea.md` §9, unchanged:
 - Storage: S3 / Firebase Storage / Cloudinary for photos
 - Auth: Firebase Auth / Clerk / Auth0
 
+**Local development vs. production (Task 13A/13B, `Spec/tasks.md`):** photo storage and auth are implemented behind configurable seams so local development never requires a cloud account. Locally (13A), photos are saved to the backend's own filesystem and auth uses a self-issued JWT backed by the same PostgreSQL `users` table described in §5. Production (13B) switches the same seams to Cloudinary and evaluates Firebase Auth, per the choices above — no product behavior changes between the two.
+
 ## 10. Remaining Implementation Details (for engineering, not product, to decide)
 
 - Exact radius/sort algorithm for "nearby" listings in NGO browse view.
