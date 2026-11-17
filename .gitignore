@@ -9,6 +9,20 @@ node_modules/
 dist/
 build/
 
+# Local image storage (Task 13A) — donor-uploaded files themselves are never
+# committed; the directory is kept via .gitkeep so it exists on a fresh clone.
+Code/backend/uploads/*
+!Code/backend/uploads/.gitkeep
+
+# Playwright E2E (task 12.5) — local run artifacts, never committed
+Code/frontend/test-results/
+Code/frontend/playwright-report/
+Code/frontend/blob-report/
+Code/frontend/playwright/.cache/
+
+# Self-signed dev HTTPS certs (LAN geolocation) — regenerate per machine, never commit
+Code/certs/*.pem
+
 # Logs
 *.log
 npm-debug.log*

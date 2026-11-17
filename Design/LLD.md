@@ -112,7 +112,7 @@ No other transition is valid. Notably: once `picked_up`, a listing can **not** b
 
 ## 3. API Contract (REST, Node.js/Express per HLD §3)
 
-All endpoints require an authenticated session (Firebase Auth bearer token) except signup/login. Role checks are enforced server-side per the guard conditions in §2 above.
+All endpoints require an authenticated session (Firebase Auth bearer token in production, per HLD §3/Task 13B) except signup/login. Locally (Task 13A), this is a self-issued JWT verified by the same `requireAuth` middleware — `createAuthMiddleware` takes the token-verifying function as a parameter specifically so this is a one-line swap, not a different code path. Role checks are enforced server-side per the guard conditions in §2 above, identically in both environments.
 
 ### 3.1 Auth / NGO Verification
 

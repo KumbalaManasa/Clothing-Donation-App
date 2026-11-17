@@ -1,0 +1,19 @@
+version: 1
+applications:
+  - appRoot: Code/frontend
+    frontend:
+      buildPath: /
+      phases:
+        preBuild:
+          commands:
+            - npm ci --prefix Code/frontend
+        build:
+          commands:
+            - npm run build --prefix Code/frontend
+      artifacts:
+        baseDirectory: Code/frontend/dist
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - Code/frontend/node_modules/**/*

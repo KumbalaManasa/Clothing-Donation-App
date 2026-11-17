@@ -31,6 +31,8 @@ This HLD describes the system architecture needed to deliver the MVP flows defin
 
 This is an engineering-level choice, not a product decision — it does not alter any flow, status, or data rule defined in `spec.md`.
 
+**Local dev vs. production (`Spec/tasks.md` Phase 13A/13B):** Media storage and Auth above are the *production* targets. Both sit behind a configurable seam (`IMAGE_STORAGE_DRIVER` for storage; `createAuthMiddleware`'s injectable verifier for auth) so local development (13A) runs against the local filesystem and a self-issued JWT with no Cloudinary/Firebase account, while production (13B) points the same seams at Cloudinary/Firebase without changing route code.
+
 ## 4. System Context Diagram
 
 ```mermaid
