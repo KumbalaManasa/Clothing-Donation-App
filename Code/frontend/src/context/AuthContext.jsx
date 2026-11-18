@@ -19,14 +19,16 @@ export function AuthProvider({ children }) {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       const parsed = stored ? JSON.parse(stored) : null
-      setAuthToken(parsed?.token ?? null)
-      return parsed
+      // In Type 3: Token is stored securely in an HttpOnly cookie, not in localStorage.
+      // localStorage only caches non-sensitive user profile info for instant rendering.
+      setAuthToken(null)
+      return parsed ? { user: parsed.user || parsed } : null
     } catch {
       return null
     }
   })
 
-  // Validate active session with backend on load. If the session cookie is valid,
+  // Validate active session with backend on load. If the HttpOnly cookie is valid,
   // ensure the latest user profile is populated. If invalid/expired, clear local state.
   useEffect(() => {
     let isMounted = true
@@ -40,7 +42,7 @@ export function AuthProvider({ children }) {
         }
       })
       .catch(() => {
-        // If the session was revoked or expired on the server, reset state
+        // If the cookie was cleared or expired, reset state
         if (isMounted && auth) {
           persist(null)
         }
@@ -50,50 +52,35 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  // persist() sets the module-level auth token synchronously, before calling
-  // setAuth(): a state update can mount new authenticated-only children
-  // (e.g. BrowseListings right after NGO signup) in the same commit, and
-  // child effects fire before this provider's own effects, so leaving the
-  // token update to a useEffect here would race that child's on-mount fetch.
   function persist(next) {
-    setAuthToken(next?.token ?? null)
+    // In Type 3: We deliberately do NOT store the JWT token in JavaScript or localStorage.
+    // The browser automatically stores and attaches the HttpOnly cookie.
+    setAuthToken(null)
     setAuth(next)
-    if (next) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    if (next?.user) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: next.user }))
     } else {
       localStorage.removeItem(STORAGE_KEY)
     }
   }
 
-  // /auth/login's user payload doesn't carry role-specific fields (task 10.1's
-  // note) — an NGO's verification_status is fetched separately here via
-  // GET /ngo/me (task 10.2) so a returning NGO sees its current status, not
-  // just one that just signed up. setAuthToken is called directly first since
-  // that /ngo/me call itself needs the token applied.
+  // /auth/login sets the HttpOnly cookie automatically.
   async function login(email, password) {
     const result = await apiFetch('/auth/login', { method: 'POST', body: { email, password } })
     let user = result.user
     if (user.role === 'ngo') {
-      setAuthToken(result.token)
       const ngoProfile = await apiFetch('/ngo/me')
       user = { ...user, ...ngoProfile }
     }
-    persist({ token: result.token, user })
+    persist({ user })
   }
 
-  // POST /auth/signup/donor (LLD §3.1) doesn't itself return a session token
-  // — only /auth/login does — so signup immediately logs in afterward with
-  // the same credentials.
+  // POST /auth/signup/donor immediately logs in afterward.
   async function signupDonor({ name, email, phone, password }) {
     await apiFetch('/auth/signup/donor', { method: 'POST', body: { name, email, phone, password } })
     await login(email, password)
   }
 
-  // POST /auth/signup/ngo (LLD §3.1, spec.md §6.3) returns verification_status
-  // directly (no 'pending' state), but /auth/login's user payload doesn't
-  // carry it — so the signup response's org/verification fields are merged
-  // into the logged-in user here, letting the caller show verified/not_verified
-  // immediately without a second round trip (task 10.1's verify criterion).
   async function signupNgo({ name, email, phone, password, orgName, registrationNumber }) {
     const signupResult = await apiFetch('/auth/signup/ngo', {
       method: 'POST',
@@ -101,7 +88,6 @@ export function AuthProvider({ children }) {
     })
     const loginResult = await apiFetch('/auth/login', { method: 'POST', body: { email, password } })
     persist({
-      token: loginResult.token,
       user: {
         ...loginResult.user,
         org_name: signupResult.org_name,
@@ -111,26 +97,21 @@ export function AuthProvider({ children }) {
     })
   }
 
-  // Edit-registration-number-and-resubmit action (task 10.2), wired to
-  // POST /ngo/:id/reverify. Merges the response (updated registration_number
-  // + fresh verification_status) into the current user so the UI flips to
-  // "verified" in place, without a fresh signup or re-login.
   async function reverifyNgo(registrationNumber) {
     const updated = await apiFetch(`/ngo/${auth.user.id}/reverify`, {
       method: 'POST',
       body: { registration_number: registrationNumber },
     })
-    persist({ token: auth.token, user: { ...auth.user, ...updated } })
+    persist({ user: { ...auth.user, ...updated } })
   }
 
   async function logout() {
     try {
-      // In Type 2: Inform backend (optional) and clear any cookies
+      // In Type 3: Calls backend to clear the HttpOnly cookie (Max-Age=0)
       await apiFetch('/auth/logout', { method: 'POST' })
     } catch (err) {
       console.warn('Logout request completed:', err)
     } finally {
-      // Primary Type 2 step: remove the JWT token from localStorage and memory
       persist(null)
     }
   }
