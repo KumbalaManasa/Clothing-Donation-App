@@ -13,7 +13,8 @@
 // https too whenever the page itself is.
 const defaultHostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
 const defaultProtocol = typeof window !== 'undefined' ? window.location.protocol : 'http:'
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || `${defaultProtocol}//${defaultHostname}:4000`
+const isNginxPort = typeof window !== 'undefined' && (!window.location.port || window.location.port === '443' || window.location.port === '80')
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || (isNginxPort ? '/api' : `${defaultProtocol}//${defaultHostname}:4000`)
 
 // Photo URLs from the backend are either absolute (Cloudinary, Task 13B) or a
 // relative /uploads/... path (local storage driver, Task 13A) — resolve the
@@ -21,7 +22,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || `${defaultProtocol}//${def
 // storage driver is active server-side.
 export function resolveAssetUrl(url) {
   if (!url) return url
-  return /^https?:\/\//.test(url) ? url : `${BASE_URL}${url}`
+  return /^https?:\/\//.test(url) ? url : (isNginxPort ? url : `${BASE_URL}${url}`)
 }
 
 let authToken = null
@@ -41,10 +42,13 @@ export async function apiFetch(path, { method = 'GET', body, headers = {} } = {}
     requestHeaders['Authorization'] = `Bearer ${authToken}`
   }
 
+  // credentials: 'include' ensures browsers send and store the `sid` session cookie
+  // both for same-origin (nginx) and cross-origin (direct port 5173 -> 4000) calls.
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
     headers: requestHeaders,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    credentials: 'include',
   })
 
   const contentType = response.headers.get('content-type') || ''

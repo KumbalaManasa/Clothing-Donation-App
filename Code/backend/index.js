@@ -1,8 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const fs = require('fs');
 const https = require('https');
-const path = require('path');
 const express = require('express');
 const cors = require('cors');
 
@@ -36,6 +36,7 @@ app.use(cors({
     }
     return callback(new Error('Origin is not allowed by CORS'));
   },
+  credentials: true,
 }));
 // 8mb: photos are sent as base64 JSON (~33% larger than the binary), and the
 // local image driver's own 5MB-per-file cap (src/services/localImageStorage.js)

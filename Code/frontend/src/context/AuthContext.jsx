@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 import { apiFetch, setAuthToken } from '../api/client.js'
 
 const AuthContext = createContext(null)
@@ -25,6 +25,30 @@ export function AuthProvider({ children }) {
       return null
     }
   })
+
+  // Validate active session with backend on load. If the session cookie is valid,
+  // ensure the latest user profile is populated. If invalid/expired, clear local state.
+  useEffect(() => {
+    let isMounted = true
+    apiFetch('/auth/me')
+      .then((res) => {
+        if (isMounted && res?.user) {
+          setAuth((prev) => ({
+            ...prev,
+            user: { ...prev?.user, ...res.user },
+          }))
+        }
+      })
+      .catch(() => {
+        // If the session was revoked or expired on the server, reset state
+        if (isMounted && auth) {
+          persist(null)
+        }
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   // persist() sets the module-level auth token synchronously, before calling
   // setAuth(): a state update can mount new authenticated-only children
@@ -99,8 +123,15 @@ export function AuthProvider({ children }) {
     persist({ token: auth.token, user: { ...auth.user, ...updated } })
   }
 
-  function logout() {
-    persist(null)
+  async function logout() {
+    try {
+      // Notify backend to delete session from DB and clear the `sid` cookie
+      await apiFetch('/auth/logout', { method: 'POST' })
+    } catch (err) {
+      console.warn('Backend logout failed or already cleared:', err)
+    } finally {
+      persist(null)
+    }
   }
 
   return (
