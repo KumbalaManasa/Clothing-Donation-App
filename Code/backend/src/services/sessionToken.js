@@ -7,7 +7,17 @@ const jwt = require('jsonwebtoken');
 // need to change when this gets swapped back to real Firebase later.
 
 function signSessionToken(user) {
-  return jwt.sign({ uid: user.id, role: user.role }, getSecret(), { expiresIn: '24h' });
+  // In Type 2: JWT contains the user identity & claims directly inside the token payload
+  return jwt.sign(
+    {
+      uid: user.id || user.uid,
+      role: user.role,
+      name: user.name,
+      email: user.email,
+    },
+    getSecret(),
+    { expiresIn: '24h' }
+  );
 }
 
 function verifySessionToken(token) {

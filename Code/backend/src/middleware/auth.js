@@ -1,109 +1,41 @@
-const {
-  SESSION_COOKIE_NAME,
-  parseCookies,
-  getSession,
-} = require('../services/sessionStore');
 const { verifySessionToken } = require('../services/sessionToken');
 
 /**
- * Session-based authentication middleware (Type 1: Cookie + Session ID)
+ * Type 2: JWT Bearer Token Authentication Middleware
  *
- * 1. Checks HTTP Cookie header for `sid` (Session ID).
- * 2. If present, looks up the session in PostgreSQL `sessions` table.
- * 3. Falls back to Bearer token verification if present for backward compatibility with tests.
- * 4. Populates req.user = { uid, role, ... } on success, or 401 Unauthorized on failure.
+ * 1. Reads the HTTP `Authorization` request header sent by the client.
+ * 2. Validates format: `Bearer <jwt-token>`.
+ * 3. Cryptographically verifies the signature and expiration using JWT_SECRET.
+ * 4. Populates req.user = { uid, role, name, email } directly from token payload.
+ *    (Stateless — 0 database lookups required!).
+ * 5. Rejects missing, malformed, expired, or tampered tokens with 401 Unauthorized.
  */
-async function requireAuth(req, res, next) {
-  const cookies = parseCookies(req);
-  const sessionId = cookies[SESSION_COOKIE_NAME];
-
-  // 1. Primary: Session-based auth via HttpOnly Cookie (or Authorization: Session <sid>)
-  if (sessionId) {
-    try {
-      const session = await getSession(sessionId);
-      if (session) {
-        req.user = {
-          uid: session.user_id,
-          role: session.role,
-          name: session.name,
-          email: session.email,
-        };
-        req.session = session;
-        return next();
-      }
-      return res.status(401).json({ message: 'Invalid or expired session' });
-    } catch (err) {
-      console.error('Session lookup error:', err);
-      return res.status(500).json({ message: 'Internal server error checking session' });
-    }
-  }
-
-  // 2. Fallback: Authorization header (Session <id> or Bearer <token>)
-  const authHeader = req.headers['authorization'] || '';
-  if (authHeader) {
-    const [scheme, token] = authHeader.split(' ');
-    if (scheme === 'Session' && token) {
-      const session = await getSession(token);
-      if (session) {
-        req.user = {
-          uid: session.user_id,
-          role: session.role,
-          name: session.name,
-          email: session.email,
-        };
-        req.session = session;
-        return next();
-      }
-      return res.status(401).json({ message: 'Invalid or expired session' });
-    }
-
-    if (scheme === 'Bearer' && token) {
-      // First try session lookup with this token
-      const session = await getSession(token);
-      if (session) {
-        req.user = {
-          uid: session.user_id,
-          role: session.role,
-          name: session.name,
-          email: session.email,
-        };
-        req.session = session;
-        return next();
-      }
-
-      // If not in sessions table, check if it's a signed JWT token
-      try {
-        const decoded = verifySessionToken(token);
-        if (decoded) {
-          req.user = decoded;
-          return next();
-        }
-      } catch {
-        // Not a valid JWT either
-      }
-      return res.status(401).json({ message: 'Invalid or expired session' });
-    }
-  }
-
-  return res.status(401).json({ message: 'No active session (session cookie missing)' });
-}
-
-function createAuthMiddleware(verifyIdToken) {
-  return async function (req, res, next) {
+function createAuthMiddleware(verifyTokenFn) {
+  return async function requireAuth(req, res, next) {
     const authHeader = req.headers['authorization'] || '';
-    const [scheme, token] = authHeader.split(' ');
 
+    if (!authHeader) {
+      return res.status(401).json({ message: 'Missing Authorization header' });
+    }
+
+    const [scheme, token] = authHeader.split(' ');
     if (scheme !== 'Bearer' || !token) {
-      return res.status(401).json({ message: 'Missing or malformed Authorization header' });
+      return res.status(401).json({ message: 'Invalid Authorization header format. Expected Bearer <token>' });
     }
 
     try {
-      req.user = await verifyIdToken(token);
-      next();
-    } catch {
-      return res.status(401).json({ message: 'Invalid or expired token' });
+      const decoded = await verifyTokenFn(token);
+      req.user = decoded;
+      return next();
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({ message: 'JWT token has expired' });
+      }
+      return res.status(401).json({ message: 'Invalid or forged JWT token' });
     }
   };
 }
+
+const requireAuth = createAuthMiddleware(verifySessionToken);
 
 module.exports = { requireAuth, createAuthMiddleware };
