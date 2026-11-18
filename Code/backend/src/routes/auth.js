@@ -4,6 +4,14 @@ const db = require('../db');
 const { verifyNgo } = require('../services/verifyNgo');
 const { signSessionToken } = require('../services/sessionToken');
 const {
+  createSession,
+  deleteSession,
+  buildSessionCookie,
+  buildClearSessionCookie,
+  parseCookies,
+} = require('../services/sessionStore');
+const { requireAuth } = require('../middleware/auth');
+const {
   generateCode,
   generateLinkToken,
   hashSecret,
@@ -103,11 +111,9 @@ router.post('/signup/ngo', async (req, res) => {
   }
 });
 
-// POST /auth/login — LLD §3.1: public, "standard session issuance". Checks the
-// submitted password against the stored bcrypt hash and, on success, issues a
-// self-signed session token (see src/services/sessionToken.js for why this
-// isn't a real Firebase ID token yet). Generic 401 on any failure — never
-// reveals whether the email itself exists.
+// POST /auth/login — Session-based auth (Type 1: Cookie + Session ID)
+// Verifies password, generates a random Session ID in PostgreSQL, and sets
+// an HttpOnly cookie 'sid' in the response.
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
 
@@ -125,9 +131,17 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ message: 'Invalid email or password' });
   }
 
+  // 1. Create a server-side session in PostgreSQL
+  const { sessionId } = await createSession(user.id);
+
+  // 2. Attach HttpOnly cookie to response
+  res.setHeader('Set-Cookie', buildSessionCookie(sessionId));
+
+  // 3. Keep token for backward compatibility if any legacy consumer needs it
   const token = signSessionToken(user);
 
   return res.status(200).json({
+    sessionId, // Included so you can inspect it in curl or Network tab
     token,
     user: {
       id: user.id,
@@ -135,6 +149,31 @@ router.post('/login', async (req, res) => {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      org_name: user.org_name,
+      registration_number: user.registration_number,
+      verification_status: user.verification_status,
+    },
+  });
+});
+
+// POST /auth/logout — Destroys the session in DB and instructs browser to clear cookie
+router.post('/logout', async (req, res) => {
+  const cookies = parseCookies(req);
+  const sessionId = cookies['sid'];
+  if (sessionId) {
+    await deleteSession(sessionId);
+  }
+  res.setHeader('Set-Cookie', buildClearSessionCookie());
+  return res.status(200).json({ message: 'Logged out successfully' });
+});
+
+// GET /auth/me — Returns currently authenticated user session
+router.get('/me', requireAuth, async (req, res) => {
+  return res.status(200).json({
+    user: req.user,
+    session: {
+      id: req.session.session_id,
+      expires_at: req.session.expires_at,
     },
   });
 });
