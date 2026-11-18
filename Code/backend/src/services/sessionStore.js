@@ -2,7 +2,19 @@ const crypto = require('crypto');
 const db = require('../db');
 
 const SESSION_COOKIE_NAME = 'sid';
+const JWT_COOKIE_NAME = 'jwt_token';
 const SESSION_MAX_AGE_SECONDS = 24 * 60 * 60; // 24 hours
+
+/**
+ * Builds the HttpOnly cookie string for storing a stateless JWT (Type 3).
+ */
+function buildJwtCookie(token, maxAgeSeconds = SESSION_MAX_AGE_SECONDS) {
+  return `${JWT_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
+}
+
+function buildClearJwtCookie() {
+  return `${JWT_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
 
 /**
  * Parses raw Cookie header string into a key-value dictionary.
@@ -91,6 +103,7 @@ function buildClearSessionCookie() {
 
 module.exports = {
   SESSION_COOKIE_NAME,
+  JWT_COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
   parseCookies,
   createSession,
@@ -98,5 +111,7 @@ module.exports = {
   deleteSession,
   buildSessionCookie,
   buildClearSessionCookie,
+  buildJwtCookie,
+  buildClearJwtCookie,
 };
 

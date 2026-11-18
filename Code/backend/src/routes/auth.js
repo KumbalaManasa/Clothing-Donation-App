@@ -8,6 +8,8 @@ const {
   deleteSession,
   buildSessionCookie,
   buildClearSessionCookie,
+  buildJwtCookie,
+  buildClearJwtCookie,
   parseCookies,
 } = require('../services/sessionStore');
 const { requireAuth } = require('../middleware/auth');
@@ -111,9 +113,9 @@ router.post('/signup/ngo', async (req, res) => {
   }
 });
 
-// POST /auth/login — Type 2: JWT Bearer Token (stored in localStorage)
-// Verifies user credentials and generates a signed, self-contained JWT token.
-// No session is written to PostgreSQL (stateless). No session cookies are set.
+// POST /auth/login — Type 3: JWT in HttpOnly Cookie
+// Issues a stateless JWT containing user claims, and sets it in a secure HttpOnly cookie.
+// The browser automatically attaches this cookie on subsequent requests; JavaScript cannot read it.
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
 
@@ -131,14 +133,14 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ message: 'Invalid email or password' });
   }
 
-  // Generate self-contained signed JWT token (claims stored directly inside payload)
+  // 1. Generate signed, stateless JWT token
   const token = signSessionToken(user);
 
-  // Clear any existing cookie from Type 1 so browser tests don't fall back to cookies
-  res.setHeader('Set-Cookie', buildClearSessionCookie());
+  // 2. Set HttpOnly cookie with the JWT
+  res.setHeader('Set-Cookie', buildJwtCookie(token));
 
   return res.status(200).json({
-    token, // Client will store this in localStorage and send as "Authorization: Bearer <token>"
+    token, // Provided for curl / manual inspection, but browser stores it in HttpOnly cookie
     user: {
       id: user.id,
       name: user.name,
@@ -152,21 +154,19 @@ router.post('/login', async (req, res) => {
   });
 });
 
-// POST /auth/logout — Type 2: Stateless JWT logout
-// Since stateless JWTs have no server-side database record, logout is handled
-// client-side by deleting the token from localStorage. We also clear any old cookie.
+// POST /auth/logout — Type 3: Clears the HttpOnly JWT cookie
 router.post('/logout', async (req, res) => {
-  res.setHeader('Set-Cookie', buildClearSessionCookie());
+  res.setHeader('Set-Cookie', buildClearJwtCookie());
   return res.status(200).json({
-    message: 'Logged out successfully (token deleted from client localStorage)',
+    message: 'Logged out successfully (HttpOnly JWT cookie cleared)',
   });
 });
 
-// GET /auth/me — Returns currently authenticated user claims decoded from the JWT
+// GET /auth/me — Returns currently authenticated user claims decoded from the HttpOnly JWT
 router.get('/me', requireAuth, async (req, res) => {
   return res.status(200).json({
     user: req.user,
-    authType: 'Bearer JWT (localStorage)',
+    authType: 'JWT in HttpOnly Cookie (Stateless)',
   });
 });
 

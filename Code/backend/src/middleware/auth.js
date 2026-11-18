@@ -1,26 +1,32 @@
 const { verifySessionToken } = require('../services/sessionToken');
+const { parseCookies, JWT_COOKIE_NAME } = require('../services/sessionStore');
 
 /**
- * Type 2: JWT Bearer Token Authentication Middleware
+ * Type 3: JWT in HttpOnly Cookie Authentication Middleware
  *
- * 1. Reads the HTTP `Authorization` request header sent by the client.
- * 2. Validates format: `Bearer <jwt-token>`.
- * 3. Cryptographically verifies the signature and expiration using JWT_SECRET.
+ * 1. Checks HTTP request cookies for `jwt_token`.
+ * 2. Falls back to `Authorization: Bearer <token>` if no cookie is present (for curl/CLI/tests).
+ * 3. Cryptographically verifies the JWT signature with JWT_SECRET (Stateless — 0 DB lookups).
  * 4. Populates req.user = { uid, role, name, email } directly from token payload.
- *    (Stateless — 0 database lookups required!).
- * 5. Rejects missing, malformed, expired, or tampered tokens with 401 Unauthorized.
+ * 5. Returns 401 Unauthorized if missing, expired, or tampered.
  */
 function createAuthMiddleware(verifyTokenFn) {
   return async function requireAuth(req, res, next) {
-    const authHeader = req.headers['authorization'] || '';
+    // 1. Primary: HttpOnly Cookie sent automatically by the browser
+    const cookies = parseCookies(req);
+    let token = cookies[JWT_COOKIE_NAME];
 
-    if (!authHeader) {
-      return res.status(401).json({ message: 'Missing Authorization header' });
+    // 2. Fallback: Authorization header (for backward compatibility with tests & curl)
+    if (!token) {
+      const authHeader = req.headers['authorization'] || '';
+      const [scheme, bearerToken] = authHeader.split(' ');
+      if (scheme === 'Bearer' && bearerToken) {
+        token = bearerToken;
+      }
     }
 
-    const [scheme, token] = authHeader.split(' ');
-    if (scheme !== 'Bearer' || !token) {
-      return res.status(401).json({ message: 'Invalid Authorization header format. Expected Bearer <token>' });
+    if (!token) {
+      return res.status(401).json({ message: 'Missing authentication (HttpOnly JWT cookie not present)' });
     }
 
     try {
