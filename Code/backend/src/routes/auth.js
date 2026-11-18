@@ -111,9 +111,9 @@ router.post('/signup/ngo', async (req, res) => {
   }
 });
 
-// POST /auth/login — Session-based auth (Type 1: Cookie + Session ID)
-// Verifies password, generates a random Session ID in PostgreSQL, and sets
-// an HttpOnly cookie 'sid' in the response.
+// POST /auth/login — Type 2: JWT Bearer Token (stored in localStorage)
+// Verifies user credentials and generates a signed, self-contained JWT token.
+// No session is written to PostgreSQL (stateless). No session cookies are set.
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
 
@@ -131,18 +131,14 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ message: 'Invalid email or password' });
   }
 
-  // 1. Create a server-side session in PostgreSQL
-  const { sessionId } = await createSession(user.id);
-
-  // 2. Attach HttpOnly cookie to response
-  res.setHeader('Set-Cookie', buildSessionCookie(sessionId));
-
-  // 3. Keep token for backward compatibility if any legacy consumer needs it
+  // Generate self-contained signed JWT token (claims stored directly inside payload)
   const token = signSessionToken(user);
 
+  // Clear any existing cookie from Type 1 so browser tests don't fall back to cookies
+  res.setHeader('Set-Cookie', buildClearSessionCookie());
+
   return res.status(200).json({
-    sessionId, // Included so you can inspect it in curl or Network tab
-    token,
+    token, // Client will store this in localStorage and send as "Authorization: Bearer <token>"
     user: {
       id: user.id,
       name: user.name,
@@ -156,25 +152,21 @@ router.post('/login', async (req, res) => {
   });
 });
 
-// POST /auth/logout — Destroys the session in DB and instructs browser to clear cookie
+// POST /auth/logout — Type 2: Stateless JWT logout
+// Since stateless JWTs have no server-side database record, logout is handled
+// client-side by deleting the token from localStorage. We also clear any old cookie.
 router.post('/logout', async (req, res) => {
-  const cookies = parseCookies(req);
-  const sessionId = cookies['sid'];
-  if (sessionId) {
-    await deleteSession(sessionId);
-  }
   res.setHeader('Set-Cookie', buildClearSessionCookie());
-  return res.status(200).json({ message: 'Logged out successfully' });
+  return res.status(200).json({
+    message: 'Logged out successfully (token deleted from client localStorage)',
+  });
 });
 
-// GET /auth/me — Returns currently authenticated user session
+// GET /auth/me — Returns currently authenticated user claims decoded from the JWT
 router.get('/me', requireAuth, async (req, res) => {
   return res.status(200).json({
     user: req.user,
-    session: {
-      id: req.session.session_id,
-      expires_at: req.session.expires_at,
-    },
+    authType: 'Bearer JWT (localStorage)',
   });
 });
 

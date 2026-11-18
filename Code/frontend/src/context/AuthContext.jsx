@@ -125,11 +125,12 @@ export function AuthProvider({ children }) {
 
   async function logout() {
     try {
-      // Notify backend to delete session from DB and clear the `sid` cookie
+      // In Type 2: Inform backend (optional) and clear any cookies
       await apiFetch('/auth/logout', { method: 'POST' })
     } catch (err) {
-      console.warn('Backend logout failed or already cleared:', err)
+      console.warn('Logout request completed:', err)
     } finally {
+      // Primary Type 2 step: remove the JWT token from localStorage and memory
       persist(null)
     }
   }
