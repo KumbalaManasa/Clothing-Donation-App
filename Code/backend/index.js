@@ -13,6 +13,7 @@ const claimsRoutes = require('./src/routes/claims');
 const notificationsRoutes = require('./src/routes/notifications');
 const adminRoutes = require('./src/routes/admin');
 const dashboardRoutes = require('./src/routes/dashboard');
+const partnerRoutes = require('./src/routes/partner');
 
 const app = express();
 app.use((req, res, next) => {
@@ -72,6 +73,8 @@ app.use('/admin', adminRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/dashboard', dashboardRoutes);
+app.use('/partner', partnerRoutes);
+app.use('/api/partner', partnerRoutes);
 
 // Global error handler — defense in depth. Route-level validation should
 // catch expected bad input before this ever fires, but any unexpected error
