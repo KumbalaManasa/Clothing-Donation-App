@@ -26,10 +26,39 @@ export function resolveAssetUrl(url) {
 }
 
 let authToken = null
+let refreshPromise = null
 
-// Auth header injection point (LLD §3: endpoints expect a Firebase Auth bearer token).
+// In Type 4: Access token is kept in memory
 export function setAuthToken(token) {
   authToken = token
+}
+
+export function getAuthToken() {
+  return authToken
+}
+
+async function silentRefresh() {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+        })
+        if (!res.ok) {
+          throw new Error('Refresh failed')
+        }
+        const data = await res.json()
+        const newToken = data.accessToken || data.token
+        setAuthToken(newToken)
+        return newToken
+      } finally {
+        refreshPromise = null
+      }
+    })()
+  }
+  return refreshPromise
 }
 
 export async function apiFetch(path, { method = 'GET', body, headers = {} } = {}) {
@@ -42,8 +71,7 @@ export async function apiFetch(path, { method = 'GET', body, headers = {} } = {}
     requestHeaders['Authorization'] = `Bearer ${authToken}`
   }
 
-  // credentials: 'include' ensures browsers send and store the `sid` session cookie
-  // both for same-origin (nginx) and cross-origin (direct port 5173 -> 4000) calls.
+  // credentials: 'include' ensures browsers send and receive HttpOnly cookies (refresh_token)
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
     headers: requestHeaders,
@@ -55,6 +83,27 @@ export async function apiFetch(path, { method = 'GET', body, headers = {} } = {}
   const data = contentType.includes('application/json') ? await response.json() : await response.text()
 
   if (!response.ok) {
+    // If the short-lived access token expired, transparently refresh and retry once!
+    if (response.status === 401 && (data?.code === 'TOKEN_EXPIRED' || data?.message?.includes('expired')) && !path.includes('/auth/')) {
+      try {
+        const newToken = await silentRefresh()
+        requestHeaders['Authorization'] = `Bearer ${newToken}`
+        const retryResponse = await fetch(`${BASE_URL}${path}`, {
+          method,
+          headers: requestHeaders,
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+          credentials: 'include',
+        })
+        const retryContentType = retryResponse.headers.get('content-type') || ''
+        const retryData = retryContentType.includes('application/json') ? await retryResponse.json() : await retryResponse.text()
+        if (retryResponse.ok) {
+          return retryData
+        }
+      } catch {
+        setAuthToken(null)
+      }
+    }
+
     const message = (data && data.message) || response.statusText
     throw new Error(message)
   }

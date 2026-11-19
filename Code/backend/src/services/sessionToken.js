@@ -6,8 +6,8 @@ const jwt = require('jsonwebtoken');
 // (.uid) so downstream code (and requireAuth's existing tests, task 2.1) don't
 // need to change when this gets swapped back to real Firebase later.
 
-function signSessionToken(user) {
-  // In Type 2: JWT contains the user identity & claims directly inside the token payload
+function signSessionToken(user, expiresIn = '15m') {
+  // In Type 4: Access Tokens are short-lived (15 minutes).
   return jwt.sign(
     {
       uid: user.id || user.uid,
@@ -16,7 +16,7 @@ function signSessionToken(user) {
       email: user.email,
     },
     getSecret(),
-    { expiresIn: '24h' }
+    { expiresIn }
   );
 }
 
