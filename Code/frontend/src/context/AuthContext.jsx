@@ -19,43 +19,41 @@ export function AuthProvider({ children }) {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       const parsed = stored ? JSON.parse(stored) : null
-      // In Type 3: Token is stored securely in an HttpOnly cookie, not in localStorage.
-      // localStorage only caches non-sensitive user profile info for instant rendering.
-      setAuthToken(null)
       return parsed ? { user: parsed.user || parsed } : null
     } catch {
       return null
     }
   })
 
-  // Validate active session with backend on load. If the HttpOnly cookie is valid,
-  // ensure the latest user profile is populated. If invalid/expired, clear local state.
+  // On initial page load: attempt silent refresh using the HttpOnly refresh_token cookie.
+  // This automatically acquires a fresh in-memory access token without prompting for password.
   useEffect(() => {
     let isMounted = true
-    apiFetch('/auth/me')
+
+    apiFetch('/auth/refresh', { method: 'POST' })
       .then((res) => {
-        if (isMounted && res?.user) {
-          setAuth((prev) => ({
-            ...prev,
-            user: { ...prev?.user, ...res.user },
-          }))
+        if (isMounted) {
+          setAuthToken(res.accessToken || res.token)
+          if (res.user) {
+            setAuth({ user: res.user })
+          }
         }
       })
       .catch(() => {
-        // If the cookie was cleared or expired, reset state
-        if (isMounted && auth) {
-          persist(null)
+        // No active refresh token or expired
+        if (isMounted) {
+          setAuthToken(null)
+          setAuth(null)
+          localStorage.removeItem(STORAGE_KEY)
         }
       })
+
     return () => {
       isMounted = false
     }
   }, [])
 
   function persist(next) {
-    // In Type 3: We deliberately do NOT store the JWT token in JavaScript or localStorage.
-    // The browser automatically stores and attaches the HttpOnly cookie.
-    setAuthToken(null)
     setAuth(next)
     if (next?.user) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: next.user }))
@@ -64,9 +62,11 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // /auth/login sets the HttpOnly cookie automatically.
+  // /auth/login returns short-lived accessToken and sets HttpOnly refresh_token cookie
   async function login(email, password) {
     const result = await apiFetch('/auth/login', { method: 'POST', body: { email, password } })
+    const token = result.accessToken || result.token
+    setAuthToken(token)
     let user = result.user
     if (user.role === 'ngo') {
       const ngoProfile = await apiFetch('/ngo/me')
@@ -107,11 +107,12 @@ export function AuthProvider({ children }) {
 
   async function logout() {
     try {
-      // In Type 3: Calls backend to clear the HttpOnly cookie (Max-Age=0)
+      // In Type 4: Revokes the refresh token in the DB and clears the HttpOnly cookie
       await apiFetch('/auth/logout', { method: 'POST' })
     } catch (err) {
       console.warn('Logout request completed:', err)
     } finally {
+      setAuthToken(null)
       persist(null)
     }
   }

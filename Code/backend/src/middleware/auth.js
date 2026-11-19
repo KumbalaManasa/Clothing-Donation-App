@@ -2,31 +2,33 @@ const { verifySessionToken } = require('../services/sessionToken');
 const { parseCookies, JWT_COOKIE_NAME } = require('../services/sessionStore');
 
 /**
- * Type 3: JWT in HttpOnly Cookie Authentication Middleware
+ * Type 4: Access Token Verification Middleware
  *
- * 1. Checks HTTP request cookies for `jwt_token`.
- * 2. Falls back to `Authorization: Bearer <token>` if no cookie is present (for curl/CLI/tests).
- * 3. Cryptographically verifies the JWT signature with JWT_SECRET (Stateless — 0 DB lookups).
- * 4. Populates req.user = { uid, role, name, email } directly from token payload.
- * 5. Returns 401 Unauthorized if missing, expired, or tampered.
+ * 1. Checks `Authorization: Bearer <accessToken>`.
+ * 2. Cryptographically verifies the short-lived access token with JWT_SECRET (stateless).
+ * 3. If expired, returns 401 with { code: 'TOKEN_EXPIRED' } so the client can trigger silent refresh.
+ * 4. If valid, attaches req.user and proceeds.
  */
 function createAuthMiddleware(verifyTokenFn) {
   return async function requireAuth(req, res, next) {
-    // 1. Primary: HttpOnly Cookie sent automatically by the browser
-    const cookies = parseCookies(req);
-    let token = cookies[JWT_COOKIE_NAME];
+    const authHeader = req.headers['authorization'] || '';
+    let token = null;
 
-    // 2. Fallback: Authorization header (for backward compatibility with tests & curl)
-    if (!token) {
-      const authHeader = req.headers['authorization'] || '';
+    if (authHeader) {
       const [scheme, bearerToken] = authHeader.split(' ');
       if (scheme === 'Bearer' && bearerToken) {
         token = bearerToken;
       }
     }
 
+    // Fallback: check cookie if someone passed token via cookie
     if (!token) {
-      return res.status(401).json({ message: 'Missing authentication (HttpOnly JWT cookie not present)' });
+      const cookies = parseCookies(req);
+      token = cookies[JWT_COOKIE_NAME];
+    }
+
+    if (!token) {
+      return res.status(401).json({ code: 'TOKEN_MISSING', message: 'Missing Authorization header' });
     }
 
     try {
@@ -35,9 +37,12 @@ function createAuthMiddleware(verifyTokenFn) {
       return next();
     } catch (err) {
       if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({ message: 'JWT token has expired' });
+        return res.status(401).json({
+          code: 'TOKEN_EXPIRED',
+          message: 'Access token has expired. Use /auth/refresh to obtain a new one.',
+        });
       }
-      return res.status(401).json({ message: 'Invalid or forged JWT token' });
+      return res.status(401).json({ code: 'INVALID_TOKEN', message: 'Invalid or forged token' });
     }
   };
 }

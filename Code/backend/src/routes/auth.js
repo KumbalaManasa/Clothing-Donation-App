@@ -12,6 +12,14 @@ const {
   buildClearJwtCookie,
   parseCookies,
 } = require('../services/sessionStore');
+const {
+  createRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  buildRefreshCookie,
+  buildClearRefreshCookie,
+  REFRESH_COOKIE_NAME,
+} = require('../services/refreshTokenService');
 const { requireAuth } = require('../middleware/auth');
 const {
   generateCode,
@@ -113,9 +121,10 @@ router.post('/signup/ngo', async (req, res) => {
   }
 });
 
-// POST /auth/login — Type 3: JWT in HttpOnly Cookie
-// Issues a stateless JWT containing user claims, and sets it in a secure HttpOnly cookie.
-// The browser automatically attaches this cookie on subsequent requests; JavaScript cannot read it.
+// POST /auth/login — Type 4: Access Token + Refresh Token (with Rotation)
+// 1. Issues a short-lived Access Token (JWT, 15m) for stateless API access.
+// 2. Creates and stores a long-lived Refresh Token in PostgreSQL.
+// 3. Sets the Refresh Token inside an HttpOnly cookie so JS cannot read it.
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
 
@@ -133,14 +142,19 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ message: 'Invalid email or password' });
   }
 
-  // 1. Generate signed, stateless JWT token
-  const token = signSessionToken(user);
+  // 1. Issue short-lived access token (15 minutes)
+  const accessToken = signSessionToken(user, '15m');
 
-  // 2. Set HttpOnly cookie with the JWT
-  res.setHeader('Set-Cookie', buildJwtCookie(token));
+  // 2. Issue long-lived refresh token (stored in PostgreSQL)
+  const { refreshToken } = await createRefreshToken(user.id);
+
+  // 3. Set HttpOnly cookie for the Refresh Token
+  res.setHeader('Set-Cookie', buildRefreshCookie(refreshToken));
 
   return res.status(200).json({
-    token, // Provided for curl / manual inspection, but browser stores it in HttpOnly cookie
+    accessToken,
+    token: accessToken, // for backward compatibility with existing components
+    refreshToken, // returned for curl / CLI inspection
     user: {
       id: user.id,
       name: user.name,
@@ -154,19 +168,74 @@ router.post('/login', async (req, res) => {
   });
 });
 
-// POST /auth/logout — Type 3: Clears the HttpOnly JWT cookie
-router.post('/logout', async (req, res) => {
-  res.setHeader('Set-Cookie', buildClearJwtCookie());
+// POST /auth/refresh — Type 4: Refresh Token Rotation & Reuse Detection
+// 1. Validates the incoming refresh token.
+// 2. If already revoked, REUSE IS DETECTED -> revokes all user sessions!
+// 3. Otherwise, marks current token as used and issues a brand new Refresh Token (Rotation).
+// 4. Returns a fresh short-lived Access Token.
+router.post('/refresh', async (req, res) => {
+  const cookies = parseCookies(req);
+  const rawToken = cookies[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
+
+  if (!rawToken) {
+    return res.status(401).json({ message: 'Refresh token missing' });
+  }
+
+  const result = await rotateRefreshToken(rawToken);
+
+  if (result.error === 'reuse_detected') {
+    // Immediate attacker neutralization: clear cookie and reject
+    res.setHeader('Set-Cookie', buildClearRefreshCookie());
+    return res.status(403).json({
+      code: 'REUSE_DETECTED',
+      message: 'Refresh token reuse detected! All active sessions have been revoked for security.',
+    });
+  }
+
+  if (result.error) {
+    res.setHeader('Set-Cookie', buildClearRefreshCookie());
+    return res.status(401).json({ message: 'Invalid or expired refresh token' });
+  }
+
+  // Issue new short-lived access token
+  const newAccessToken = signSessionToken(result.user, '15m');
+
+  // Send rotated refresh token in the HttpOnly cookie
+  res.setHeader('Set-Cookie', buildRefreshCookie(result.newRefreshToken));
+
   return res.status(200).json({
-    message: 'Logged out successfully (HttpOnly JWT cookie cleared)',
+    accessToken: newAccessToken,
+    token: newAccessToken,
+    refreshToken: result.newRefreshToken,
+    user: {
+      id: result.user.id,
+      name: result.user.name,
+      email: result.user.email,
+      role: result.user.role,
+    },
   });
 });
 
-// GET /auth/me — Returns currently authenticated user claims decoded from the HttpOnly JWT
+// POST /auth/logout — Type 4: Revokes the refresh token in PostgreSQL and clears cookie
+router.post('/logout', async (req, res) => {
+  const cookies = parseCookies(req);
+  const rawToken = cookies[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
+
+  if (rawToken) {
+    await revokeRefreshToken(rawToken);
+  }
+
+  res.setHeader('Set-Cookie', buildClearRefreshCookie());
+  return res.status(200).json({
+    message: 'Logged out successfully (refresh token revoked and cookie cleared)',
+  });
+});
+
+// GET /auth/me — Returns user claims decoded from the short-lived access token
 router.get('/me', requireAuth, async (req, res) => {
   return res.status(200).json({
     user: req.user,
-    authType: 'JWT in HttpOnly Cookie (Stateless)',
+    authType: 'Access Token + Refresh Token (Rotation)',
   });
 });
 
