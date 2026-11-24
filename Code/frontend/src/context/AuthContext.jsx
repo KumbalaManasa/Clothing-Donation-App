@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { apiFetch, setAuthToken } from '../api/client.js'
+import { startGoogleLogin, exchangeCodeForToken } from '../utils/pkce.js'
 
 const AuthContext = createContext(null)
 const STORAGE_KEY = 'donation-app.auth'
@@ -25,10 +26,28 @@ export function AuthProvider({ children }) {
     }
   })
 
-  // On initial page load: attempt silent refresh using the HttpOnly refresh_token cookie.
-  // This automatically acquires a fresh in-memory access token without prompting for password.
+  // On initial page load:
+  // 1. Check if returning from Google OAuth (has ?code= in URL). If so, exchange code + PKCE verifier.
+  // 2. Otherwise attempt silent refresh using the HttpOnly refresh_token cookie.
   useEffect(() => {
     let isMounted = true
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const state = params.get('state')
+
+    if (code) {
+      exchangeCodeForToken(code, state)
+        .then((res) => {
+          if (isMounted && res?.user) {
+            persist({ user: res.user })
+            window.history.replaceState({}, document.title, window.location.pathname)
+          }
+        })
+        .catch((err) => {
+          console.error('OAuth PKCE exchange error:', err)
+        })
+      return
+    }
 
     apiFetch('/auth/refresh', { method: 'POST' })
       .then((res) => {
@@ -40,7 +59,6 @@ export function AuthProvider({ children }) {
         }
       })
       .catch(() => {
-        // No active refresh token or expired
         if (isMounted) {
           setAuthToken(null)
           setAuth(null)
@@ -118,7 +136,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user: auth?.user ?? null, login, signupDonor, signupNgo, reverifyNgo, logout }}>
+    <AuthContext.Provider value={{ user: auth?.user ?? null, login, loginWithGoogle: startGoogleLogin, signupDonor, signupNgo, reverifyNgo, logout }}>
       {children}
     </AuthContext.Provider>
   )

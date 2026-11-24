@@ -1,0 +1,336 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'WearForward Donation App - VPC, EC2 App Server, Target Group, ALB with Host-Based Routing'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: 'wearforward-prod'
+    Description: 'An environment name that will be prefixed to resource names'
+
+  HostHeaderDomain:
+    Type: String
+    Default: 'api.wearforward.com'
+    Description: 'The domain name to match in the ALB Host-based routing rule'
+
+  InstanceType:
+    Type: String
+    Default: 't3.micro'
+    Description: 'EC2 Instance type (Free-tier eligible)'
+
+Resources:
+  # =========================================================================
+  # 1. VPC & NETWORKING
+  # =========================================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-vpc'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-public-subnet-1'
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-public-subnet-2'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-public-rt'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  Subnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  Subnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # =========================================================================
+  # 2. SECURITY GROUPS
+  # =========================================================================
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Allow inbound HTTP traffic on port 80 to the Application Load Balancer'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-alb-sg'
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Allow inbound port 4000 from ALB and port 22 for SSH'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 4000
+          ToPort: 4000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-ec2-sg'
+
+  # =========================================================================
+  # 3. EC2 APPLICATION INSTANCE (WearForward API Backend on Port 4000)
+  # =========================================================================
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      # Amazon Linux 2023 AMI lookup via Systems Manager
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64}}'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          dnf update -y
+          dnf install -y nodejs npm git
+
+          mkdir -p /opt/wearforward-api
+          cd /opt/wearforward-api
+
+          cat << 'EOF' > package.json
+          {
+            "name": "wearforward-api",
+            "version": "1.0.0",
+            "main": "server.js",
+            "dependencies": {
+              "express": "^4.19.2",
+              "cors": "^2.8.5"
+            }
+          }
+          EOF
+
+          cat << 'EOF' > server.js
+          const express = require('express');
+          const cors = require('cors');
+          const app = express();
+          const PORT = process.env.PORT || 4000;
+
+          app.use(cors());
+          app.use(express.json());
+
+          app.use((req, res, next) => {
+            res.setHeader('X-Served-By', String(PORT));
+            res.setHeader('X-Matched-Host', req.headers['host'] || 'unknown');
+            next();
+          });
+
+          app.get('/health', (req, res) => {
+            res.status(200).json({
+              status: 'ok',
+              service: 'WearForward Clothing Donation API',
+              port: PORT,
+              pid: process.pid,
+              hostHeaderReceived: req.headers['host'],
+              timestamp: new Date().toISOString()
+            });
+          });
+
+          app.get('/api/health', (req, res) => {
+            res.status(200).json({
+              status: 'ok',
+              service: 'WearForward Clothing Donation API',
+              port: PORT,
+              pid: process.pid,
+              hostHeaderReceived: req.headers['host'],
+              timestamp: new Date().toISOString()
+            });
+          });
+
+          app.get('/api/listings', (req, res) => {
+            res.json({
+              message: 'Listings endpoint reached successfully through ALB host-based routing',
+              data: [
+                { id: 1, title: 'Winter Jackets', category: 'Clothing', status: 'available' },
+                { id: 2, title: 'Warm Blankets', category: 'Bedding', status: 'available' }
+              ]
+            });
+          });
+
+          app.listen(PORT, '0.0.0.0', () => {
+            console.log(`WearForward API server running on port ${PORT}`);
+          });
+          EOF
+
+          npm install --production
+
+          cat << 'EOF' > /etc/systemd/system/wearforward.service
+          [Unit]
+          Description=WearForward Donation App Node.js Service
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory=/opt/wearforward-api
+          ExecStart=/usr/bin/node server.js
+          Restart=always
+          RestartSec=10
+          Environment=PORT=4000 NODE_ENV=production
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          systemctl daemon-reload
+          systemctl enable wearforward.service
+          systemctl start wearforward.service
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-api-instance'
+
+  # =========================================================================
+  # 4. STEP 1: TARGET GROUP (PORT 4000)
+  # =========================================================================
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${EnvironmentName}-tg-4000'
+      Port: 4000
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: '4000'
+      HealthCheckPath: /api/health
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      Targets:
+        - Id: !Ref AppInstance
+          Port: 4000
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-tg'
+
+  # =========================================================================
+  # 5. STEP 2: APPLICATION LOAD BALANCER
+  # =========================================================================
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${EnvironmentName}-alb'
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-alb'
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      # Default action when NO host header matches: returns HTTP 404
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+            ContentType: 'application/json'
+            MessageBody: '{"error":"NOT_FOUND","message":"Default ALB action: Host header did not match any routing rules"}'
+
+  # =========================================================================
+  # 6. STEP 3: ALB HOST-BASED ROUTING RULE
+  # =========================================================================
+  HostBasedRoutingRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ALBListener
+      Priority: 1
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - !Ref HostHeaderDomain
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  ALBDNSName:
+    Description: 'The public DNS name of the Application Load Balancer'
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  InstancePublicIP:
+    Description: 'Public IP of the EC2 backend instance'
+    Value: !GetAtt AppInstance.PublicIp
+
+  TestMatchedHostHeader:
+    Description: 'Command to test ALB Host-based routing (SUCCESS -> 200 OK)'
+    Value: !Sub 'curl.exe -i -H "Host: ${HostHeaderDomain}" http://${ApplicationLoadBalancer.DNSName}/api/health'
+
+  TestDefaultUnmatchedHostHeader:
+    Description: 'Command to test unmatched Host header (DEFAULT -> 404)'
+    Value: !Sub 'curl.exe -i -H "Host: unrouted-domain.com" http://${ApplicationLoadBalancer.DNSName}/api/health'
