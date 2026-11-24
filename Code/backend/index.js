@@ -14,6 +14,7 @@ const notificationsRoutes = require('./src/routes/notifications');
 const adminRoutes = require('./src/routes/admin');
 const dashboardRoutes = require('./src/routes/dashboard');
 const partnerRoutes = require('./src/routes/partner');
+const oauthRoutes = require('./src/routes/oauth');
 
 const app = express();
 app.use((req, res, next) => {
@@ -61,6 +62,8 @@ app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/auth/oauth', oauthRoutes);
+app.use('/api/auth/oauth', oauthRoutes);
 app.use('/ngo', ngoRoutes);
 app.use('/api/ngo', ngoRoutes);
 app.use('/listings', listingsRoutes);
