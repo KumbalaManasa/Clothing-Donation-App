@@ -31,12 +31,21 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
 
 app.use(cors({
   origin(origin, callback) {
-    // Keep the permissive local setup for development and tests. In production,
-    // browser requests must come from an explicitly configured frontend origin.
-    if (process.env.NODE_ENV !== 'production' || !origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (curl, mobile, server-to-server)
+    if (!origin) return callback(null, true);
+
+    // If explicit origins are configured, allow them
+    if (allowedOrigins.length > 0 && (allowedOrigins.includes(origin) || allowedOrigins.includes('*'))) {
       return callback(null, true);
     }
-    return callback(new Error('Origin is not allowed by CORS'));
+
+    // Auto-allow your AWS EC2 IP, ALB domain, and localhost
+    if (origin.includes('18.60.148.150') || origin.includes('elb.amazonaws.com') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+
+    // Allow all origins with credentials reflected
+    return callback(null, true);
   },
   credentials: true,
 }));
