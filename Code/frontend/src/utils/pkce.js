@@ -1,4 +1,4 @@
-import { apiFetch, setAuthToken } from '../api/client.js'
+import { apiFetch, resolveAssetUrl, setAuthToken } from '../api/client.js'
 
 function base64url(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer)
@@ -37,12 +37,16 @@ export async function startGoogleLogin() {
   const challenge = await computeCodeChallenge(verifier)
 
   sessionStorage.setItem('pkce_code_verifier', verifier)
+  sessionStorage.setItem('oauth_return_to', window.location.pathname)
+
+  const returnUrl = encodeURIComponent(window.location.origin + window.location.pathname)
 
   const initData = await apiFetch(
-    `/auth/oauth/google/init?code_challenge=${encodeURIComponent(challenge)}&code_challenge_method=S256`
+    `/auth/oauth/google/init?code_challenge=${encodeURIComponent(challenge)}&code_challenge_method=S256&return_url=${returnUrl}`
   )
 
-  window.location.href = initData.authUrl
+  const targetUrl = resolveAssetUrl(initData.authUrl)
+  window.location.href = targetUrl
 }
 
 /**

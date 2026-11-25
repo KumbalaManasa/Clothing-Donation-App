@@ -15,6 +15,18 @@ function DonorAuthForm() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
+
+  async function handleGoogleLogin() {
+    setError(null)
+    setGoogleLoading(true)
+    try {
+      await loginWithGoogle()
+    } catch (err) {
+      setError(err.message || 'Unable to connect to Google sign-in. Please ensure the backend is running.')
+      setGoogleLoading(false)
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -66,21 +78,38 @@ function DonorAuthForm() {
       <div style={{ margin: '14px 0', borderTop: '1px solid #e2e8f0', paddingTop: '14px', textAlign: 'center' }}>
         <button
           type="button"
-          onClick={loginWithGoogle}
+          onClick={handleGoogleLogin}
+          disabled={googleLoading}
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             width: '100%',
-            gap: '8px',
+            gap: '10px',
             backgroundColor: '#ffffff',
             color: '#3c4043',
             border: '1px solid #dadce0',
-            borderRadius: '4px',
-            padding: '8px 12px',
-            cursor: 'pointer',
-            fontWeight: '500',
-            fontSize: '13px',
+            borderRadius: '6px',
+            padding: '10px 16px',
+            cursor: googleLoading ? 'wait' : 'pointer',
+            fontWeight: '600',
+            fontSize: '14px',
+            boxShadow: '0 1px 2px rgba(60,64,67,0.1)',
+            transition: 'background-color 0.2s, box-shadow 0.2s, border-color 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            if (!googleLoading) {
+              e.currentTarget.style.backgroundColor = '#f8fafd'
+              e.currentTarget.style.borderColor = '#c2e7ff'
+              e.currentTarget.style.boxShadow = '0 1px 3px rgba(60,64,67,0.2)'
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!googleLoading) {
+              e.currentTarget.style.backgroundColor = '#ffffff'
+              e.currentTarget.style.borderColor = '#dadce0'
+              e.currentTarget.style.boxShadow = '0 1px 2px rgba(60,64,67,0.1)'
+            }
           }}
         >
           <svg width="18" height="18" viewBox="0 0 48 48">
@@ -89,7 +118,7 @@ function DonorAuthForm() {
             <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
             <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
           </svg>
-          Sign in with Google (OAuth 2.0 + PKCE)
+          {googleLoading ? 'Signing in with Google...' : 'Sign in with Google'}
         </button>
       </div>
       <button type="button" onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}>

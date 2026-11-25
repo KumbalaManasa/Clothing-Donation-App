@@ -79,6 +79,24 @@ app.use('/dashboard', dashboardRoutes);
 app.use('/partner', partnerRoutes);
 app.use('/api/partner', partnerRoutes);
 
+// Serve built frontend assets if present
+const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.use((req, res, next) => {
+    if (
+      req.method === 'GET' &&
+      !req.path.startsWith('/api') &&
+      !req.path.startsWith('/auth') &&
+      !req.path.startsWith('/uploads') &&
+      !req.path.startsWith('/health')
+    ) {
+      return res.sendFile(path.join(frontendDist, 'index.html'));
+    }
+    next();
+  });
+}
+
 // Global error handler — defense in depth. Route-level validation should
 // catch expected bad input before this ever fires, but any unexpected error
 // (a DB constraint violation slipping through, a bug, etc.) must never leak

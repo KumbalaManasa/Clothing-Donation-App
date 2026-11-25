@@ -40,7 +40,9 @@ export function AuthProvider({ children }) {
         .then((res) => {
           if (isMounted && res?.user) {
             persist({ user: res.user })
-            window.history.replaceState({}, document.title, window.location.pathname)
+            const returnTo = sessionStorage.getItem('oauth_return_to') || (res.user.role === 'ngo' ? '/ngo' : '/donor')
+            sessionStorage.removeItem('oauth_return_to')
+            window.history.replaceState({}, document.title, returnTo)
           }
         })
         .catch((err) => {
