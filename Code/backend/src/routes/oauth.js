@@ -33,9 +33,10 @@ router.get('/google/init', async (req, res) => {
   // Save state in a secure HttpOnly cookie for CSRF validation upon return
   res.setHeader('Set-Cookie', `oauth_state=${oauthState}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`);
 
-  // Directs to the Google Consent page, preserving return_url
+  // Directs to the Google Consent page, preserving return_url and method
   const returnParam = return_url ? `&return_url=${encodeURIComponent(return_url)}` : '';
-  const consentUrl = `/api/auth/oauth/google/consent?state=${oauthState}&code_challenge=${encodeURIComponent(code_challenge)}${returnParam}`;
+  const methodParam = `&code_challenge_method=${encodeURIComponent(code_challenge_method)}`;
+  const consentUrl = `/api/auth/oauth/google/consent?state=${oauthState}&code_challenge=${encodeURIComponent(code_challenge)}${methodParam}${returnParam}`;
 
   return res.status(200).json({
     authUrl: consentUrl,
@@ -50,8 +51,9 @@ router.get('/google/init', async (req, res) => {
  * Simulation of Google's Consent Screen.
  */
 router.get('/google/consent', async (req, res) => {
-  const { state, code_challenge, return_url } = req.query;
+  const { state, code_challenge, code_challenge_method = 'S256', return_url } = req.query;
   const returnParam = return_url ? `&return_url=${encodeURIComponent(return_url)}` : '';
+  const methodParam = `&code_challenge_method=${encodeURIComponent(code_challenge_method)}`;
 
   const html = `
   <!DOCTYPE html>
@@ -82,7 +84,7 @@ router.get('/google/consent', async (req, res) => {
       <p>to continue to <strong>WearForward Donation App</strong></p>
 
       <!-- Option 1: Donor account -->
-      <a class="user-option" href="/api/auth/oauth/google/consent-select?account=donor&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(code_challenge)}${returnParam}">
+      <a class="user-option" href="/api/auth/oauth/google/consent-select?account=donor&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(code_challenge)}${methodParam}${returnParam}">
         <div class="avatar">D</div>
         <div class="info">
           <div class="name">Google Donor Account</div>
@@ -92,7 +94,7 @@ router.get('/google/consent', async (req, res) => {
       </a>
 
       <!-- Option 2: NGO account -->
-      <a class="user-option" href="/api/auth/oauth/google/consent-select?account=ngo&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(code_challenge)}${returnParam}">
+      <a class="user-option" href="/api/auth/oauth/google/consent-select?account=ngo&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(code_challenge)}${methodParam}${returnParam}">
         <div class="avatar">N</div>
         <div class="info">
           <div class="name">Google NGO Partner</div>
@@ -118,7 +120,7 @@ router.get('/google/consent', async (req, res) => {
  * Issues a single-use authorization code tied to this PKCE challenge and redirects back to app.
  */
 router.get('/google/consent-select', async (req, res) => {
-  const { account, state, code_challenge, return_url } = req.query;
+  const { account, state, code_challenge, code_challenge_method = 'S256', return_url } = req.query;
 
   const authCode = 'code_' + crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
@@ -143,7 +145,7 @@ router.get('/google/consent-select', async (req, res) => {
   await db('oauth_codes').insert({
     code: authCode,
     code_challenge: code_challenge,
-    code_challenge_method: 'S256',
+    code_challenge_method: code_challenge_method,
     state: state,
     profile_payload: JSON.stringify(profile),
     is_used: false,
@@ -191,8 +193,8 @@ router.post('/google/token', async (req, res) => {
   }
 
   // PKCE VERIFICATION:
-  // Hash the presented code_verifier with SHA-256 and base64url-encode it
-  const isPkceValid = verifyCodeChallenge(code_verifier, codeRow.code_challenge);
+  // Verifies the presented code_verifier against code_challenge using the specified method (S256 or plain)
+  const isPkceValid = verifyCodeChallenge(code_verifier, codeRow.code_challenge, codeRow.code_challenge_method || 'S256');
 
   if (!isPkceValid) {
     return res.status(403).json({

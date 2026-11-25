@@ -28,9 +28,13 @@ function computeCodeChallenge(verifier) {
 
 /**
  * Timing-safe verification of code_verifier against expected code_challenge
+ * Supports both S256 (SHA-256) and plain (RFC 7636 standard fallback)
  */
-function verifyCodeChallenge(verifier, expectedChallenge) {
+function verifyCodeChallenge(verifier, expectedChallenge, method = 'S256') {
   if (!verifier || !expectedChallenge) return false;
+  if (method === 'plain') {
+    return verifier === expectedChallenge;
+  }
   const computed = computeCodeChallenge(verifier);
   if (computed.length !== expectedChallenge.length) return false;
   return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(expectedChallenge));
