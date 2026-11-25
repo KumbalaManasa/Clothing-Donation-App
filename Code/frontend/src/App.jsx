@@ -37,6 +37,8 @@ function App() {
       <main className="app-main">
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<DonorPage />} />
+          <Route path="/auth/callback" element={<DonorPage />} />
           <Route path="/donor" element={<DonorPage />} />
           <Route path="/donor/dashboard" element={<DonorPage />} />
           <Route path="/donor/new-listing" element={<DonorPage />} />

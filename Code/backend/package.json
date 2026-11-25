@@ -11,6 +11,7 @@
     "migrate:down": "knex migrate:rollback",
     "seed": "knex seed:run",
     "seed:users": "node scripts/seed-test-users.js",
+    "db:show": "node scripts/show-db.js",
     "test:cloudinary-upload": "node scripts/upload-test-image.js",
     "test": "node scripts/run-tests.js",
     "security-check": "node scripts/security-spot-check.js"

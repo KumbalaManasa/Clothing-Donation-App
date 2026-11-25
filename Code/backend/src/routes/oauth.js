@@ -19,7 +19,7 @@ const router = express.Router();
  * Returns the authorization URL or redirect.
  */
 router.get('/google/init', async (req, res) => {
-  const { code_challenge, code_challenge_method = 'S256', state } = req.query;
+  const { code_challenge, code_challenge_method = 'S256', state, return_url } = req.query;
 
   if (!code_challenge) {
     return res.status(400).json({
@@ -33,8 +33,9 @@ router.get('/google/init', async (req, res) => {
   // Save state in a secure HttpOnly cookie for CSRF validation upon return
   res.setHeader('Set-Cookie', `oauth_state=${oauthState}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`);
 
-  // Directs to the simulated Google Consent page
-  const consentUrl = `/api/auth/oauth/google/consent?state=${oauthState}&code_challenge=${encodeURIComponent(code_challenge)}`;
+  // Directs to the Google Consent page, preserving return_url
+  const returnParam = return_url ? `&return_url=${encodeURIComponent(return_url)}` : '';
+  const consentUrl = `/api/auth/oauth/google/consent?state=${oauthState}&code_challenge=${encodeURIComponent(code_challenge)}${returnParam}`;
 
   return res.status(200).json({
     authUrl: consentUrl,
@@ -46,17 +47,17 @@ router.get('/google/init', async (req, res) => {
 
 /**
  * 2. GET /auth/oauth/google/consent
- * Visual simulation of Google's OAuth 2.0 / OIDC Consent Screen.
- * Demonstrates what happens at accounts.google.com!
+ * Simulation of Google's Consent Screen.
  */
 router.get('/google/consent', async (req, res) => {
-  const { state, code_challenge } = req.query;
+  const { state, code_challenge, return_url } = req.query;
+  const returnParam = return_url ? `&return_url=${encodeURIComponent(return_url)}` : '';
 
   const html = `
   <!DOCTYPE html>
   <html>
   <head>
-    <title>Sign in with Google (OAuth 2.0 + OIDC Simulator)</title>
+    <title>Sign in with Google</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
@@ -64,14 +65,14 @@ router.get('/google/consent', async (req, res) => {
       .logo { width: 48px; height: 48px; margin-bottom: 12px; }
       h2 { margin: 8px 0; color: #202124; font-size: 20px; }
       p { color: #5f6368; font-size: 14px; margin-bottom: 24px; }
-      .user-option { display: flex; align-items: center; padding: 12px 16px; border: 1px solid #dadce0; border-radius: 8px; margin-bottom: 12px; cursor: pointer; text-decoration: none; color: inherit; transition: background 0.15s; }
+      .user-option { display: flex; align-items: center; padding: 12px 16px; border: 1px solid #dadce0; border-radius: 8px; margin-bottom: 12px; cursor: pointer; text-decoration: none; color: inherit; transition: background 0.15s, border-color 0.15s; }
       .user-option:hover { background: #f8f9fa; border-color: #1a73e8; }
-      .avatar { width: 36px; height: 36px; border-radius: 50%; background: #e8f0fe; color: #1a73e8; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 12px; }
+      .avatar { width: 36px; height: 36px; border-radius: 50%; background: #e8f0fe; color: #1a73e8; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 12px; font-size: 16px; }
       .info { text-align: left; }
       .name { font-weight: 600; font-size: 14px; color: #3c4043; }
       .email { font-size: 12px; color: #70757a; }
       .tag { margin-left: auto; font-size: 11px; background: #e6f4ea; color: #137333; padding: 2px 8px; border-radius: 12px; font-weight: 500; }
-      .pkce-info { margin-top: 24px; padding: 12px; background: #eef3fc; border-radius: 6px; font-size: 11px; text-align: left; color: #174ea6; word-break: break-all; }
+      .footer-info { margin-top: 24px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 12px; color: #5f6368; }
     </style>
   </head>
   <body>
@@ -81,7 +82,7 @@ router.get('/google/consent', async (req, res) => {
       <p>to continue to <strong>WearForward Donation App</strong></p>
 
       <!-- Option 1: Donor account -->
-      <a class="user-option" href="/api/auth/oauth/google/consent-select?account=donor&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(code_challenge)}">
+      <a class="user-option" href="/api/auth/oauth/google/consent-select?account=donor&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(code_challenge)}${returnParam}">
         <div class="avatar">D</div>
         <div class="info">
           <div class="name">Google Donor Account</div>
@@ -91,7 +92,7 @@ router.get('/google/consent', async (req, res) => {
       </a>
 
       <!-- Option 2: NGO account -->
-      <a class="user-option" href="/api/auth/oauth/google/consent-select?account=ngo&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(code_challenge)}">
+      <a class="user-option" href="/api/auth/oauth/google/consent-select?account=ngo&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(code_challenge)}${returnParam}">
         <div class="avatar">N</div>
         <div class="info">
           <div class="name">Google NGO Partner</div>
@@ -100,10 +101,8 @@ router.get('/google/consent', async (req, res) => {
         <span class="tag">NGO</span>
       </a>
 
-      <div class="pkce-info">
-        <strong>🔒 PKCE Verification Active:</strong><br>
-        Challenge: <code>${code_challenge || 'none'}</code><br>
-        State (CSRF): <code>${state || 'none'}</code>
+      <div class="footer-info">
+        🔒 Fast & secure single sign-on powered by Google
       </div>
     </div>
   </body>
@@ -119,7 +118,7 @@ router.get('/google/consent', async (req, res) => {
  * Issues a single-use authorization code tied to this PKCE challenge and redirects back to app.
  */
 router.get('/google/consent-select', async (req, res) => {
-  const { account, state, code_challenge } = req.query;
+  const { account, state, code_challenge, return_url } = req.query;
 
   const authCode = 'code_' + crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
@@ -151,8 +150,11 @@ router.get('/google/consent-select', async (req, res) => {
     expires_at: expiresAt,
   });
 
-  // Redirect back to frontend callback URL with authorization code and state
-  return res.redirect(`/login?code=${authCode}&state=${encodeURIComponent(state)}`);
+  // Redirect back to return_url or fallback
+  const fallbackUrl = process.env.FRONTEND_BASE_URL || (account === 'ngo' ? '/ngo' : '/donor');
+  const targetBase = return_url || fallbackUrl;
+  const delimiter = targetBase.includes('?') ? '&' : '?';
+  return res.redirect(`${targetBase}${delimiter}code=${authCode}&state=${encodeURIComponent(state)}`);
 });
 
 /**
