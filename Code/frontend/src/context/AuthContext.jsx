@@ -20,7 +20,11 @@ export function AuthProvider({ children }) {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       const parsed = stored ? JSON.parse(stored) : null
-      return parsed ? { user: parsed.user || parsed } : null
+      const token = parsed?.token
+      if (token) {
+        setAuthToken(token)
+      }
+      return parsed ? { user: parsed.user || parsed, token } : null
     } catch {
       return null
     }
@@ -39,7 +43,8 @@ export function AuthProvider({ children }) {
       exchangeCodeForToken(code, state)
         .then((res) => {
           if (isMounted && res?.user) {
-            persist({ user: res.user })
+            const token = res.accessToken || res.token
+            persist({ user: res.user, token })
             const returnTo = sessionStorage.getItem('oauth_return_to') || (res.user.role === 'ngo' ? '/ngo' : '/donor')
             sessionStorage.removeItem('oauth_return_to')
             window.history.replaceState({}, document.title, returnTo)
@@ -54,9 +59,10 @@ export function AuthProvider({ children }) {
     apiFetch('/auth/refresh', { method: 'POST' })
       .then((res) => {
         if (isMounted) {
-          setAuthToken(res.accessToken || res.token)
+          const token = res.accessToken || res.token
+          setAuthToken(token)
           if (res.user) {
-            setAuth({ user: res.user })
+            persist({ user: res.user, token })
           }
         }
       })
@@ -76,7 +82,8 @@ export function AuthProvider({ children }) {
   function persist(next) {
     setAuth(next)
     if (next?.user) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: next.user }))
+      const token = next.token || auth?.token
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: next.user, token }))
     } else {
       localStorage.removeItem(STORAGE_KEY)
     }
@@ -92,7 +99,7 @@ export function AuthProvider({ children }) {
       const ngoProfile = await apiFetch('/ngo/me')
       user = { ...user, ...ngoProfile }
     }
-    persist({ user })
+    persist({ user, token })
   }
 
   // POST /auth/signup/donor immediately logs in afterward.
