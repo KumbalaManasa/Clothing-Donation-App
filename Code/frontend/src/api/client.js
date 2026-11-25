@@ -25,12 +25,20 @@ export function resolveAssetUrl(url) {
   return /^https?:\/\//.test(url) ? url : (isNginxPort ? url : `${BASE_URL}${url}`)
 }
 
-let authToken = null
+const TOKEN_STORAGE_KEY = 'donation-app.token'
+let authToken = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_STORAGE_KEY) : null
 let refreshPromise = null
 
-// In Type 4: Access token is kept in memory
+// In Type 4: Access token is kept in memory and persisted in localStorage for synchronous reload availability
 export function setAuthToken(token) {
   authToken = token
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, token)
+    } else {
+      localStorage.removeItem(TOKEN_STORAGE_KEY)
+    }
+  }
 }
 
 export function getAuthToken() {

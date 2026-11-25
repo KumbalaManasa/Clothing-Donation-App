@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { apiFetch } from '../api/client.js'
+import { apiFetch, getAuthToken } from '../api/client.js'
 
 // Poll interval — same convention as MyListingsPage's status polling (task
 // 9.6). Without this, a notification created while the bell's owner already
@@ -29,6 +29,9 @@ function NotificationCenter() {
   const latestRequestId = useRef(0)
 
   const refetch = useCallback(() => {
+    if (!getAuthToken()) {
+      return Promise.resolve()
+    }
     const requestId = ++latestRequestId.current
     return apiFetch('/notifications')
       .then((data) => {
@@ -39,7 +42,9 @@ function NotificationCenter() {
       })
       .catch((err) => {
         if (requestId === latestRequestId.current) {
-          setError(err.message)
+          if (!err.message?.includes('Authorization') && !err.message?.includes('token')) {
+            setError(err.message)
+          }
         }
       })
   }, [])
@@ -117,7 +122,9 @@ function NotificationCenter() {
       </button>
       {open && (
         <div data-testid="notification-list">
-          {error && <p data-testid="notification-error">{error}</p>}
+          {error && !error.includes('Authorization') && !error.includes('token') && (
+            <p data-testid="notification-error">{error}</p>
+          )}
           {recentNotifications.length === 0 && <p>No notifications yet.</p>}
           {recentNotifications.slice(0, visibleCount).map((n) => (
             <div

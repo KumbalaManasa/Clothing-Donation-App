@@ -109,19 +109,11 @@ export function AuthProvider({ children }) {
   }
 
   async function signupNgo({ name, email, phone, password, orgName, registrationNumber }) {
-    const signupResult = await apiFetch('/auth/signup/ngo', {
+    await apiFetch('/auth/signup/ngo', {
       method: 'POST',
       body: { name, email, phone, password, org_name: orgName, registration_number: registrationNumber },
     })
-    const loginResult = await apiFetch('/auth/login', { method: 'POST', body: { email, password } })
-    persist({
-      user: {
-        ...loginResult.user,
-        org_name: signupResult.org_name,
-        registration_number: signupResult.registration_number,
-        verification_status: signupResult.verification_status,
-      },
-    })
+    await login(email, password)
   }
 
   async function reverifyNgo(registrationNumber) {
