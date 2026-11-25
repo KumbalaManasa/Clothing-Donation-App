@@ -32,9 +32,16 @@ function NotificationCenter() {
     const requestId = ++latestRequestId.current
     return apiFetch('/notifications')
       .then((data) => {
-        if (requestId === latestRequestId.current) setNotifications(data)
+        if (requestId === latestRequestId.current) {
+          setNotifications(data)
+          setError(null)
+        }
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => {
+        if (requestId === latestRequestId.current) {
+          setError(err.message)
+        }
+      })
   }, [])
 
   useEffect(() => {
@@ -60,6 +67,7 @@ function NotificationCenter() {
       const updated = await apiFetch(`/notifications/${id}/read`, { method: 'POST' })
       if (requestId === latestRequestId.current) {
         setNotifications((prev) => prev.map((n) => (n.id === id ? updated : n)))
+        setError(null)
       }
     } catch (err) {
       setError(err.message)
@@ -80,6 +88,7 @@ function NotificationCenter() {
       if (requestId === latestRequestId.current) {
         const updatedById = new Map(updated.map((n) => [n.id, n]))
         setNotifications((prev) => prev.map((n) => updatedById.get(n.id) || n))
+        setError(null)
       }
     } catch (err) {
       setError(err.message)

@@ -83,8 +83,15 @@ export async function apiFetch(path, { method = 'GET', body, headers = {} } = {}
   const data = contentType.includes('application/json') ? await response.json() : await response.text()
 
   if (!response.ok) {
-    // If the short-lived access token expired, transparently refresh and retry once!
-    if (response.status === 401 && (data?.code === 'TOKEN_EXPIRED' || data?.message?.includes('expired')) && !path.includes('/auth/')) {
+    // If the access token expired or was missing, transparently refresh and retry once!
+    if (
+      response.status === 401 &&
+      (data?.code === 'TOKEN_EXPIRED' ||
+        data?.code === 'TOKEN_MISSING' ||
+        data?.message?.includes('expired') ||
+        data?.message?.includes('Missing Authorization')) &&
+      !path.includes('/auth/')
+    ) {
       try {
         const newToken = await silentRefresh()
         requestHeaders['Authorization'] = `Bearer ${newToken}`
