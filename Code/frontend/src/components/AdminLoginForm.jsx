@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 
 // Admin login only — no signup form, deliberately: admin accounts aren't
@@ -51,7 +50,6 @@ function AdminLoginForm() {
       <button type="submit" disabled={submitting}>
         Log in
       </button>
-      <Link to="/forgot-password">Forgot password?</Link>
     </form>
   )
 }
