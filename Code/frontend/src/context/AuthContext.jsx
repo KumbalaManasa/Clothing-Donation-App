@@ -108,10 +108,19 @@ export function AuthProvider({ children }) {
     await login(email, password)
   }
 
-  async function signupNgo({ name, email, phone, password, orgName, registrationNumber }) {
+  async function signupNgo({ name, email, phone, password, orgName, registrationNumber, address, operatingArea }) {
     await apiFetch('/auth/signup/ngo', {
       method: 'POST',
-      body: { name, email, phone, password, org_name: orgName, registration_number: registrationNumber },
+      body: {
+        name,
+        email,
+        phone,
+        password,
+        org_name: orgName,
+        registration_number: registrationNumber,
+        address: address || operatingArea,
+        operating_area: operatingArea || address,
+      },
     })
     await login(email, password)
   }

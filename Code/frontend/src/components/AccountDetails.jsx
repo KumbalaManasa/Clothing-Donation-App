@@ -7,6 +7,7 @@ function AccountDetails({ user }) {
     ...(user.role === 'ngo' ? [
       ['Organization', user.org_name],
       ['Registration number', user.registration_number],
+      ['Operating City / Address', user.address || user.operating_area],
       ['Verification status', user.verification_status],
     ] : []),
   ].filter(([, value]) => value)

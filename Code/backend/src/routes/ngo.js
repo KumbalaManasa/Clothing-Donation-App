@@ -77,21 +77,27 @@ router.post('/:id/reverify', requireAuth, requireRole('ngo'), async (req, res) =
 // a returning NGO's current status without this. Same "add the minimal
 // missing plumbing" pattern as /listings/upload-photo and /listings/reverse-geocode.
 router.get('/me', requireAuth, requireRole('ngo'), async (req, res) => {
+  const hasLocationCols = await db.schema.hasColumn('users', 'address').catch(() => false);
+  const selectFields = [
+    'id',
+    'name',
+    'email',
+    'phone',
+    'role',
+    'org_name',
+    'registration_number',
+    'verification_status',
+    'verification_checked_at',
+    'verification_source_ref',
+    'created_at',
+  ];
+  if (hasLocationCols) {
+    selectFields.push('lat', 'lng', 'address', 'operating_area');
+  }
+
   const ngo = await db('users')
     .where({ id: req.user.uid, role: 'ngo' })
-    .first([
-      'id',
-      'name',
-      'email',
-      'phone',
-      'role',
-      'org_name',
-      'registration_number',
-      'verification_status',
-      'verification_checked_at',
-      'verification_source_ref',
-      'created_at',
-    ]);
+    .first(selectFields);
 
   return res.status(200).json(ngo);
 });

@@ -15,6 +15,7 @@ function NgoAuthForm() {
   const [password, setPassword] = useState('')
   const [orgName, setOrgName] = useState('')
   const [registrationNumber, setRegistrationNumber] = useState('')
+  const [address, setAddress] = useState('')
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -26,7 +27,7 @@ function NgoAuthForm() {
       if (mode === 'login') {
         await login(email, password)
       } else {
-        await signupNgo({ name, email, phone, password, orgName, registrationNumber })
+        await signupNgo({ name, email, phone, password, orgName, registrationNumber, address })
       }
     } catch (err) {
       setError(err.message)
@@ -50,9 +51,15 @@ function NgoAuthForm() {
           />
           <input
             aria-label="Registration number"
-            placeholder="Registration / approval number"
+            placeholder="Registration / approval number (e.g. APPROVED-12345)"
             value={registrationNumber}
             onChange={(e) => setRegistrationNumber(e.target.value)}
+          />
+          <input
+            aria-label="Operating city or address"
+            placeholder="Operating city or address (e.g. Siddipet, Telangana)"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
           />
         </>
       )}

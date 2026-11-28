@@ -69,7 +69,7 @@ router.post('/signup/donor', async (req, res) => {
 // government lookup completes before the response is sent, and its result is
 // persisted directly — there is no 'pending' state (LLD §1.1).
 router.post('/signup/ngo', async (req, res) => {
-  const { name, email, phone, password, org_name, registration_number } = req.body || {};
+  const { name, email, phone, password, org_name, registration_number, address, operating_area, lat, lng } = req.body || {};
 
   if (!name || !email || !phone || !password) {
     return res.status(400).json({ message: 'name, email, phone, and password are required' });
@@ -84,20 +84,65 @@ router.post('/signup/ngo', async (req, res) => {
   const passwordHash = await bcrypt.hash(password, 10);
   const verification = await verifyNgo(registration_number);
 
+  // Common city coordinates lookup for quick address matching
+  const CITY_COORDS = [
+    { match: /siddipet/i, lat: 18.1019, lng: 78.8520 },
+    { match: /hyderabad|secunderabad/i, lat: 17.3850, lng: 78.4867 },
+    { match: /warangal/i, lat: 17.9689, lng: 79.5941 },
+    { match: /karimnagar/i, lat: 18.4386, lng: 79.1288 },
+    { match: /nizamabad/i, lat: 18.6725, lng: 78.0941 },
+    { match: /koramangala/i, lat: 12.9352, lng: 77.6245 },
+    { match: /indiranagar/i, lat: 12.9784, lng: 77.6408 },
+    { match: /bangalore|bengaluru/i, lat: 12.9716, lng: 77.5946 },
+    { match: /whitefield/i, lat: 12.9698, lng: 77.7500 },
+    { match: /delhi/i, lat: 28.6139, lng: 77.2090 },
+    { match: /mumbai/i, lat: 19.0760, lng: 72.8777 },
+    { match: /chennai/i, lat: 13.0827, lng: 80.2707 },
+  ];
+
+  let resolvedLat = lat !== undefined && lat !== null && lat !== '' ? Number(lat) : null;
+  let resolvedLng = lng !== undefined && lng !== null && lng !== '' ? Number(lng) : null;
+
+  const addrText = (address || operating_area || '').trim();
+  if ((resolvedLat === null || resolvedLng === null) && addrText) {
+    for (const city of CITY_COORDS) {
+      if (city.match.test(addrText)) {
+        resolvedLat = city.lat;
+        resolvedLng = city.lng;
+        break;
+      }
+    }
+  }
+
+  const hasLocationCols = await db.schema.hasColumn('users', 'address').catch(() => false);
+
   try {
+    const insertData = {
+      name,
+      email,
+      phone,
+      password_hash: passwordHash,
+      role: 'ngo',
+      org_name,
+      registration_number,
+      verification_status: verification.status,
+      verification_checked_at: db.fn.now(),
+      verification_source_ref: verification.source_ref,
+    };
+
+    if (hasLocationCols) {
+      if (addrText) {
+        insertData.address = addrText;
+        insertData.operating_area = operating_area || addrText;
+      }
+      if (resolvedLat !== null && resolvedLng !== null) {
+        insertData.lat = resolvedLat;
+        insertData.lng = resolvedLng;
+      }
+    }
+
     const [user] = await db('users')
-      .insert({
-        name,
-        email,
-        phone,
-        password_hash: passwordHash,
-        role: 'ngo',
-        org_name,
-        registration_number,
-        verification_status: verification.status,
-        verification_checked_at: db.fn.now(),
-        verification_source_ref: verification.source_ref,
-      })
+      .insert(insertData)
       .returning([
         'id',
         'name',
