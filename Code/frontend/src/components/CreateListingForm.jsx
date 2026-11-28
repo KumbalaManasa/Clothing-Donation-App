@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api/client.js'
 
@@ -43,6 +43,31 @@ function CreateListingForm() {
   const [pickupAddressLabel, setPickupAddressLabel] = useState('')
   const [locationStatus, setLocationStatus] = useState('idle') // idle | locating | located | error
   const [locationError, setLocationError] = useState(null)
+
+  // Verified NGO selection (after donor provides location, query nearby verified NGOs)
+  const [selectedNgoId, setSelectedNgoId] = useState(null)
+  const [verifiedNgos, setVerifiedNgos] = useState([])
+  const [loadingNgos, setLoadingNgos] = useState(false)
+  const [ngoFetchError, setNgoFetchError] = useState(null)
+
+  const fetchNearbyNgos = useCallback(async (lat, lng) => {
+    setLoadingNgos(true)
+    setNgoFetchError(null)
+    try {
+      const hasCoords = lat !== null && lat !== undefined && lng !== null && lng !== undefined
+      const query = hasCoords ? `?lat=${lat}&lng=${lng}` : ''
+      const ngos = await apiFetch(`/ngo/verified${query}`)
+      setVerifiedNgos(Array.isArray(ngos) ? ngos : [])
+    } catch (err) {
+      setNgoFetchError(err.message)
+    } finally {
+      setLoadingNgos(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchNearbyNgos(pickupLat, pickupLng)
+  }, [pickupLat, pickupLng, fetchNearbyNgos])
 
   // Browsers only expose navigator.geolocation on "secure contexts" — https://
   // or http://localhost specifically. A plain http:// LAN address (e.g.
@@ -173,6 +198,7 @@ function CreateListingForm() {
           pickup_lat: pickupLat,
           pickup_lng: pickupLng,
           pickup_address_label: pickupAddressLabel,
+          target_ngo_id: selectedNgoId || null,
         },
       })
       navigate('/donor/listings')
@@ -280,6 +306,81 @@ function CreateListingForm() {
           onChange={(e) => setPickupAddressLabel(e.target.value)}
         />
       </label>
+
+      {/* Nearby Government Verified NGOs selection */}
+      <div className="ngo-selection-section" data-testid="ngo-selection-section">
+        <h2>Choose a Verified NGO (Optional)</h2>
+        <p className="ngo-selection-description">
+          {locationIsValid
+            ? 'Based on your pickup location, here are the nearby government-verified NGOs registered in our app. You can select an NGO to give directly to them, or keep it open for any verified NGO to claim.'
+            : 'Enter or detect your location above to view government-verified NGOs near you.'}
+        </p>
+
+        {loadingNgos && <p className="ngo-loading-message">Finding nearby verified NGOs...</p>}
+        {ngoFetchError && <p className="ngo-error-message">Could not load NGOs: {ngoFetchError}</p>}
+
+        <div className="ngo-options-container" role="radiogroup" aria-label="Choose an NGO">
+          {/* Default option: Open to all */}
+          <label
+            className={`ngo-option-card ${selectedNgoId === null ? 'selected' : ''}`}
+            data-testid="ngo-option-all"
+            onClick={() => setSelectedNgoId(null)}
+          >
+            <input
+              type="radio"
+              name="target_ngo"
+              checked={selectedNgoId === null}
+              onChange={() => setSelectedNgoId(null)}
+            />
+            <div className="ngo-option-info">
+              <div className="ngo-option-title-row">
+                <strong>🌐 Open to All Nearby Verified NGOs (Recommended)</strong>
+                <span className="ngo-pill-badge open">Quickest pickup</span>
+              </div>
+              <p className="ngo-option-subtext">
+                Your donation will be visible to all verified NGOs nearby so whoever is ready can claim and collect it first.
+              </p>
+            </div>
+          </label>
+
+          {/* Specific verified NGOs */}
+          {verifiedNgos.map((ngo) => (
+            <label
+              key={ngo.id}
+              className={`ngo-option-card ${selectedNgoId === ngo.id ? 'selected' : ''}`}
+              data-testid={`ngo-option-${ngo.id}`}
+              onClick={() => setSelectedNgoId(ngo.id)}
+            >
+              <input
+                type="radio"
+                name="target_ngo"
+                checked={selectedNgoId === ngo.id}
+                onChange={() => setSelectedNgoId(ngo.id)}
+              />
+              <div className="ngo-option-info">
+                <div className="ngo-option-title-row">
+                  <strong>🏛️ {ngo.org_name || ngo.name}</strong>
+                  <span className="ngo-pill-badge verified">✅ Govt. Verified</span>
+                </div>
+                <div className="ngo-option-meta-row">
+                  {ngo.distance_km !== null && (
+                    <span className="ngo-meta-pill distance">📍 {ngo.distance_km} km away</span>
+                  )}
+                  {ngo.area_label && (
+                    <span className="ngo-meta-pill area">{ngo.area_label}</span>
+                  )}
+                  {ngo.registration_number && (
+                    <span className="ngo-meta-pill reg">Govt. Reg: {ngo.registration_number}</span>
+                  )}
+                </div>
+                {ngo.phone && (
+                  <p className="ngo-option-contact">📞 Phone: {ngo.phone}</p>
+                )}
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
 
       {submitStatus === 'error' && <p data-testid="submit-error">{submitError}</p>}
       <button type="submit" disabled={submitStatus === 'submitting' || !itemsAreValid || !locationIsValid}>

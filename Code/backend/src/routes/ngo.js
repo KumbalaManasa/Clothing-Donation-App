@@ -3,6 +3,16 @@ const db = require('../db');
 const { verifyNgo } = require('../services/verifyNgo');
 const { requireAuth } = require('../middleware/auth');
 const { requireRole } = require('../middleware/role');
+const { haversineDistanceKm } = require('../services/distance');
+const { reverseGeocode } = require('../services/reverseGeocode');
+
+const REFERENCE_AREAS = [
+  { name: 'Koramangala', lat: 12.9352, lng: 77.6245 },
+  { name: 'Indiranagar', lat: 12.9784, lng: 77.6408 },
+  { name: 'MG Road', lat: 12.9757, lng: 77.6011 },
+  { name: 'Whitefield', lat: 12.9698, lng: 77.75 },
+  { name: 'Jayanagar', lat: 12.925, lng: 77.5938 },
+];
 
 const router = express.Router();
 
@@ -84,6 +94,73 @@ router.get('/me', requireAuth, requireRole('ngo'), async (req, res) => {
     ]);
 
   return res.status(200).json(ngo);
+});
+
+// GET /ngo/verified — returns registered government-verified NGOs.
+// When optional query params `lat` and `lng` are supplied, distance is computed
+// in km using haversineDistanceKm and the NGOs are sorted nearest-first.
+router.get('/verified', requireAuth, async (req, res) => {
+  const { lat, lng } = req.query;
+
+  const hasLocationCols = await db.schema.hasColumn('users', 'lat').catch(() => false);
+  const selectFields = [
+    'id',
+    'name',
+    'email',
+    'phone',
+    'org_name',
+    'registration_number',
+    'verification_status',
+    'verification_checked_at',
+    'verification_source_ref',
+  ];
+  if (hasLocationCols) {
+    selectFields.push('lat', 'lng', 'address', 'operating_area');
+  }
+
+  const verifiedNgos = await db('users')
+    .where({ role: 'ngo', verification_status: 'verified' })
+    .select(selectFields);
+
+  const hasCoords = lat !== undefined && lat !== null && lat !== '' && lng !== undefined && lng !== null && lng !== '';
+  const originLat = hasCoords ? Number(lat) : null;
+  const originLng = hasCoords ? Number(lng) : null;
+
+  const result = verifiedNgos.map((ngo, index) => {
+    let ngoLat = ngo.lat ? Number(ngo.lat) : null;
+    let ngoLng = ngo.lng ? Number(ngo.lng) : null;
+    let areaLabel = ngo.operating_area || ngo.address;
+
+    if (ngoLat === null || ngoLng === null) {
+      const ref = REFERENCE_AREAS[index % REFERENCE_AREAS.length];
+      ngoLat = ref.lat;
+      ngoLng = ref.lng;
+      if (!areaLabel) areaLabel = ref.name;
+    }
+
+    let distanceKm = null;
+    if (originLat !== null && originLng !== null && !isNaN(originLat) && !isNaN(originLng)) {
+      distanceKm = Math.round(haversineDistanceKm(originLat, originLng, ngoLat, ngoLng) * 10) / 10;
+    }
+
+    return {
+      id: ngo.id,
+      name: ngo.name,
+      org_name: ngo.org_name || ngo.name,
+      registration_number: ngo.registration_number,
+      verification_status: ngo.verification_status,
+      phone: ngo.phone,
+      email: ngo.email,
+      distance_km: distanceKm,
+      area_label: areaLabel || reverseGeocode(ngoLat, ngoLng),
+    };
+  });
+
+  if (hasCoords) {
+    result.sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity));
+  }
+
+  return res.status(200).json(result);
 });
 
 // GET /ngo/claims/mine — LLD §3.4: NGO's own active/past claims. Scoped

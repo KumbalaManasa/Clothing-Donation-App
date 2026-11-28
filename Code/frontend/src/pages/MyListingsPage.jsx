@@ -61,6 +61,12 @@ function MyListingsPage() {
           {listing.pickup_address_label}
           {' — '}
           {listing.items.length} item(s)
+          {listing.assigned_ngo && (
+            <span className="assigned-ngo-tag" data-testid="assigned-ngo-tag">
+              {' — '}🏛️ <strong>Assigned NGO:</strong> {listing.assigned_ngo.org_name}{' '}
+              <span className="ngo-pill-badge verified">✅ Verified</span>
+            </span>
+          )}
           <DonationProgress status={listing.status} />
           <div data-testid="listing-items">
             {listing.items.map((item) => (
