@@ -171,6 +171,12 @@ function CreateListingForm() {
   async function handleSubmit(e) {
     e.preventDefault()
 
+    if (items.length === 0) {
+      setSubmitStatus('error')
+      setSubmitError('Please add at least one item to donate (click "Add item" at the top).')
+      return
+    }
+
     if (!itemsAreValid) {
       setSubmitStatus('error')
       setSubmitError('Each item needs a category, a condition, and a successfully uploaded photo before you can submit.')
@@ -179,7 +185,7 @@ function CreateListingForm() {
 
     if (!locationIsValid) {
       setSubmitStatus('error')
-      setSubmitError('Pickup location is required — use GPS if available, or enter latitude/longitude manually.')
+      setSubmitError('Pickup location is required — enter latitude and longitude coordinates.')
       return
     }
 
@@ -382,8 +388,40 @@ function CreateListingForm() {
         </div>
       </div>
 
-      {submitStatus === 'error' && <p data-testid="submit-error">{submitError}</p>}
-      <button type="submit" disabled={submitStatus === 'submitting' || !itemsAreValid || !locationIsValid}>
+      {(!itemsAreValid || !locationIsValid) && (
+        <div
+          className="form-checklist-warning"
+          style={{
+            background: '#fffbe6',
+            border: '1px solid #ffe58f',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            marginBottom: '14px',
+            fontSize: '0.9rem',
+            color: '#874d00',
+          }}
+        >
+          <strong>⚠️ To enable submission, please complete:</strong>
+          <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+            {items.length === 0 && (
+              <li>Click <strong>&quot;Add item&quot;</strong> at the top to add clothes to donate.</li>
+            )}
+            {items.length > 0 && !itemsAreValid && (
+              <li>
+                Make sure every item has a <strong>Category</strong>, <strong>Condition</strong>, and an uploaded <strong>Photo</strong> (wait until it displays &quot;Uploaded&quot;).
+              </li>
+            )}
+            {!locationIsValid && <li>Enter valid <strong>Latitude</strong> and <strong>Longitude</strong> coordinates.</li>}
+          </ul>
+        </div>
+      )}
+
+      {submitStatus === 'error' && (
+        <p data-testid="submit-error" style={{ color: '#cf1322', fontWeight: 600 }}>
+          {submitError}
+        </p>
+      )}
+      <button type="submit" disabled={submitStatus === 'submitting'}>
         {submitStatus === 'submitting' ? 'Submitting...' : 'Submit listing'}
       </button>
     </form>
