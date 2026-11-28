@@ -68,7 +68,7 @@ router.get('/reverse-geocode', requireAuth, requireRole('donor'), async (req, re
 // Cloudinary helper, task 3.1) — wiring a raw file through this endpoint isn't
 // part of this task's scope.
 router.post('/', requireAuth, requireRole('donor'), async (req, res) => {
-  const { items, pickup_lat, pickup_lng, pickup_address_label } = req.body || {};
+  const { items, pickup_lat, pickup_lng, pickup_address_label, target_ngo_id } = req.body || {};
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: 'items must be a non-empty array' });
@@ -83,17 +83,33 @@ router.post('/', requireAuth, requireRole('donor'), async (req, res) => {
     return res.status(400).json({ message: 'pickup_lat and pickup_lng are required' });
   }
 
+  let targetNgo = null;
+  if (target_ngo_id) {
+    targetNgo = await db('users')
+      .where({ id: target_ngo_id, role: 'ngo', verification_status: 'verified' })
+      .first();
+    if (!targetNgo) {
+      return res.status(400).json({ message: 'Selected NGO is not a verified NGO' });
+    }
+  }
+
   const addressLabel = pickup_address_label || reverseGeocode(pickup_lat, pickup_lng);
+  const hasTargetNgoColumn = await db.schema.hasColumn('listings', 'target_ngo_id').catch(() => false);
 
   const listing = await db.transaction(async (trx) => {
+    const listingRow = {
+      donor_id: req.user.uid,
+      status: targetNgo ? 'claimed' : 'listed',
+      pickup_lat,
+      pickup_lng,
+      pickup_address_label: addressLabel,
+    };
+    if (hasTargetNgoColumn && targetNgo) {
+      listingRow.target_ngo_id = targetNgo.id;
+    }
+
     const [createdListing] = await trx('listings')
-      .insert({
-        donor_id: req.user.uid,
-        status: 'listed',
-        pickup_lat,
-        pickup_lng,
-        pickup_address_label: addressLabel,
-      })
+      .insert(listingRow)
       .returning([
         'id',
         'donor_id',
@@ -115,7 +131,33 @@ router.post('/', requireAuth, requireRole('donor'), async (req, res) => {
       .insert(itemRows)
       .returning(['id', 'category', 'condition', 'photo_url']);
 
-    return { ...createdListing, items: createdItems };
+    if (targetNgo) {
+      await trx('claims').insert({
+        listing_id: createdListing.id,
+        ngo_id: targetNgo.id,
+        status: 'active',
+      });
+
+      await trx('notifications').insert({
+        user_id: targetNgo.id,
+        listing_id: createdListing.id,
+        type: 'claimed',
+        message: `A donor directly selected ${targetNgo.org_name || targetNgo.name} for a donation at ${addressLabel}!`,
+      });
+
+      await trx('notifications').insert({
+        user_id: req.user.uid,
+        listing_id: createdListing.id,
+        type: 'claimed',
+        message: `Your donation was directly assigned to ${targetNgo.org_name || targetNgo.name}. They will coordinate pickup!`,
+      });
+    }
+
+    return {
+      ...createdListing,
+      items: createdItems,
+      assigned_ngo: targetNgo ? { id: targetNgo.id, org_name: targetNgo.org_name || targetNgo.name } : null,
+    };
   });
 
   return res.status(201).json(listing);
@@ -142,6 +184,18 @@ router.get('/mine', requireAuth, requireRole('donor'), async (req, res) => {
   const distributions = listingIds.length
     ? await db('distributions').whereIn('listing_id', listingIds)
     : [];
+  const claims = listingIds.length
+    ? await db('claims').whereIn('listing_id', listingIds).whereIn('status', ['active', 'fulfilled'])
+    : [];
+
+  const ngoIds = [...new Set(claims.map((c) => c.ngo_id).filter(Boolean))];
+  const ngos = ngoIds.length
+    ? await db('users').whereIn('id', ngoIds).select('id', 'name', 'org_name')
+    : [];
+  const ngoById = ngos.reduce((acc, n) => {
+    acc[n.id] = n;
+    return acc;
+  }, {});
 
   const itemsByListingId = items.reduce((acc, item) => {
     (acc[item.listing_id] = acc[item.listing_id] || []).push(item);
@@ -151,9 +205,19 @@ router.get('/mine', requireAuth, requireRole('donor'), async (req, res) => {
     acc[distribution.listing_id] = distribution;
     return acc;
   }, {});
+  const claimsByListingId = claims.reduce((acc, claim) => {
+    acc[claim.listing_id] = claim;
+    return acc;
+  }, {});
 
   const result = listings.map((listing) => {
     const withItems = { ...listing, items: itemsByListingId[listing.id] || [] };
+
+    const claim = claimsByListingId[listing.id];
+    const assignedNgoUser = claim ? ngoById[claim.ngo_id] : null;
+    withItems.assigned_ngo = assignedNgoUser
+      ? { id: assignedNgoUser.id, org_name: assignedNgoUser.org_name || assignedNgoUser.name }
+      : null;
 
     if (listing.status === 'delivered') {
       const distribution = distributionByListingId[listing.id];

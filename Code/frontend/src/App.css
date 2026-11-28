@@ -647,3 +647,164 @@ tbody tr:hover { background: #fafbf8; }
   .step-illustration { aspect-ratio: 1.85; }
   .step-copy { padding: 20px 18px; }
 }
+
+/* --- Verified NGO Selection Styles --- */
+.ngo-selection-section {
+  margin-top: 24px;
+  margin-bottom: 24px;
+  padding: 20px;
+  border: 1px solid var(--line, #e2e8df);
+  border-radius: 14px;
+  background: #fbfdf9;
+}
+
+.ngo-selection-section h2 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 1.25rem;
+  color: var(--ink, #1f3326);
+}
+
+.ngo-selection-description {
+  margin-bottom: 16px;
+  font-size: 0.92rem;
+  color: #556658;
+  line-height: 1.5;
+}
+
+.ngo-loading-message {
+  font-size: 0.9rem;
+  color: #2b7254;
+  font-weight: 500;
+}
+
+.ngo-error-message {
+  font-size: 0.9rem;
+  color: #c93b2b;
+}
+
+.ngo-options-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ngo-option-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 2px solid #e1e9df;
+  border-radius: 12px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ngo-option-card:hover {
+  border-color: #9ac2aa;
+  background: #f8faf6;
+}
+
+.ngo-option-card.selected {
+  border-color: #245b42;
+  background: #f3f7f2;
+  box-shadow: 0 4px 14px rgba(36, 91, 66, 0.08);
+}
+
+.ngo-option-card input[type="radio"] {
+  margin-top: 4px;
+  accent-color: #245b42;
+  transform: scale(1.15);
+  cursor: pointer;
+}
+
+.ngo-option-info {
+  flex: 1;
+}
+
+.ngo-option-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ngo-option-title-row strong {
+  font-size: 1.02rem;
+  color: #1f3326;
+}
+
+.ngo-option-subtext {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #637367;
+  line-height: 1.45;
+}
+
+.ngo-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ngo-pill-badge.verified {
+  background: #e2f4ea;
+  color: #16633b;
+  border: 1px solid #b7e3ca;
+}
+
+.ngo-pill-badge.open {
+  background: #eef3f9;
+  color: #22518a;
+  border: 1px solid #cadbf0;
+}
+
+.ngo-option-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  margin-bottom: 4px;
+}
+
+.ngo-meta-pill {
+  font-size: 0.82rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eef2eb;
+  color: #405445;
+}
+
+.ngo-meta-pill.distance {
+  background: #e6f3eb;
+  color: #1a623c;
+  font-weight: 600;
+}
+
+.ngo-option-contact {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: #6b7a6d;
+}
+
+.assigned-ngo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  background: #f1f8f3;
+  color: #1b5336;
+  border: 1px solid #c9e4d3;
+  font-size: 0.88rem;
+}
+
